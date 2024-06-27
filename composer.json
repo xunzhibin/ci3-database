@@ -11,6 +11,7 @@
     "require": {},
     "autoload": {
         "classmap": [
+            "CI_DB"
         ]
     },
     "config": {
