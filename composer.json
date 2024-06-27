@@ -1,0 +1,20 @@
+{
+    "name": "xzb/ci3-database",
+    "description": "CI3 数据库 扩展包",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "xunzhibin",
+            "email": "xunzhibin@jnexpert.com"
+        }
+    ],
+    "require": {},
+    "autoload": {
+        "classmap": [
+        ]
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev"
+}
