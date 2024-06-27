@@ -10,7 +10,7 @@
     ],
     "require": {},
     "autoload": {
-        "files": [
+        "classmap": [
             "CI_DB.php"
         ]
     },
