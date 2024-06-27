@@ -11,7 +11,7 @@
     "require": {},
     "autoload": {
         "classmap": [
-            "CI_DB"
+            "CI_DB.php"
         ]
     },
     "config": {
