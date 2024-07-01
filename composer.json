@@ -10,9 +10,9 @@
     ],
     "require": {},
     "autoload": {
-        "classmap": [
-            "CI_DB.php"
-        ]
+        "psr-4": {
+            "Xzb\\Ci3\\Database\\": ""
+        }
     },
     "config": {
         "sort-packages": true
