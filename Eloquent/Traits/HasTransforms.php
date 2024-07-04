@@ -6,8 +6,8 @@ namespace Xzb\Ci3\Database\Eloquent\Traits;
 // 转换 辅助函数
 use Xzb\Ci3\Helpers\Transform;
 
-// PHP 异常类
-use RuntimeException;	
+// 模型 异常类
+use Xzb\Ci3\Database\ModelException;
 
 /**
  * 转换
@@ -23,7 +23,9 @@ trait HasTransforms
 	 */
 	public function transformToStorageDateFormat($value)
 	{
-		return Transform::toDateObject($value, $format = $this->getDateFormat())->format($format);
+		return empty($value)
+					? $value
+					: Transform::toDateObject($value, $format = $this->getDateFormat())->format($format);
 	}
 
 	/**
@@ -39,7 +41,7 @@ trait HasTransforms
 			return Transform::toJson($value);
 		}
 		catch (\Throwable $e) {
-			throw new RuntimeException(
+			throw ModelException::JsonEncoding(
 				"Unable to encode attribute [" . $key . "] for model [" . get_class($this) . "] to JSON: " . json_last_error_msg(),
 				$e->getCode(),
 				$e
@@ -103,6 +105,7 @@ trait HasTransforms
 			// 小数
 			case 'decimal':
 				$decimals = explode(':', $this->getCastAttributes()[$key], 2)[1];
+				$value = Transform::toFloat($value);
 				return number_format($value, $decimals, '.', '');
 			// 字符串
 			case 'string':

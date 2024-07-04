@@ -86,6 +86,25 @@ trait HasAttributes
 		return $this;
 	}
 
+	/**
+	 * 设置 模型 属性
+	 * 
+	 * @param array $attributes
+	 * @param bool $sync
+	 * @return $this
+	 */
+	public function setRawAttributes(array $attributes, $sync = false)
+	{
+		$this->attributes = $attributes;
+
+		// 是否 同步原始属性
+		if ($sync) {
+			$this->syncOriginalAttributes();
+		}
+
+		return $this;
+	}
+
 // ---------------------- 原始属性 ----------------------
 	/**
 	 * 模型 原始属性
@@ -161,6 +180,7 @@ trait HasAttributes
 		$edited = [];
 
 		foreach ($this->getAttributes() as $key => $value) {
+
 			// 新值 和 原始值 是否相等
 			if (! $this->originalIsEquivalent($key)) {
 				$edited[$key] = $value;
@@ -513,12 +533,9 @@ trait HasAttributes
 		preg_match_all('/(?<=^|;)get([^;]+?)Attribute(;|$)/', $methods, $matches);
 
 		// 缓存
-		static::$accessorAttributeCache[$className] = array_map(
-			function ($value) {
-				return Str::snake($value);
-			},
-			$matches[1]
-		);
+		static::$accessorAttributeCache[$className] = array_map(function ($value) {
+			return Str::snake($value);
+		}, $matches[1]);
 	}
 
 }

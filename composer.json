@@ -8,7 +8,9 @@
             "email": "xunzhibin@jnexpert.com"
         }
     ],
-    "require": {},
+    "require": {
+        "xzb/ci3-helpers": "dev-main"
+    },
     "autoload": {
         "psr-4": {
             "Xzb\\Ci3\\Database\\": ""

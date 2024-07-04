@@ -61,27 +61,21 @@ trait HasConnections
 	/**
 	 * 模型 查询构造器
 	 * 
-	 * @return \Xzb\Ci3\Core\Eloquent\Builder
+	 * @return \Xzb\Ci3\Database\Eloquent\Builder
 	 */
 	public function newModelQueryBuilder()
 	{
-        return (new Builder($this->baseQueryBuilder()))->setModel($this);
+		return (new Builder($this->baseQueryBuilder()))->setModel($this);
 	}
 
 	/**
-	 * 作用域 模型 查询构造器
+	 * 模型 查询构造器
 	 * 
-	 * @return \Xzb\Ci3\Core\Eloquent\Builder
+	 * @return \Xzb\Ci3\Database\Eloquent\Builder
 	 */
 	public function newQueryBuilder()
 	{
-		$builder = $this->newModelQueryBuilder();
-
-		if (in_array($trait = 'SoftDeletes', static::$traits[static::class])) {
-			$this->localMacroSoftDeletes($builder);
-		}
-
-		return $builder;
+		return $this->newModelQueryBuilder();
 	}
 
 }

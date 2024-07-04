@@ -6,6 +6,12 @@ namespace Xzb\Ci3\Database\Eloquent;
 // 调用转发 trait
 use Xzb\Ci3\Helpers\Traits\ForwardsCalls;
 
+// 模型 异常类
+use Xzb\Ci3\Database\ModelException;
+
+// PHP 匿名函数类
+use Closure;
+
 /**
  * Eloquent 查询构造器类
  */
@@ -23,6 +29,60 @@ class Builder
 		$this->query = $query;
 	}
 
+// ---------------------- 查询作用域 ----------------------
+	/**
+	 * 查询作用域
+	 * 
+	 * @var array
+	 */
+	protected $queryScope;
+
+	/**
+	 * 注册 查询作用域
+	 * 
+	 * @param string $identifier
+	 * @param \Closure $scope
+	 * @return $this
+	 */
+	public function queryScope(Closure $scope)
+	{
+		$this->queryScope = $scope;
+
+		return $this;
+	}
+
+	/**
+	 * 重置 查询作用域
+	 * 
+	 * @return $this
+	 */
+	public function resetQueryScope()
+	{
+		unset($this->queryScope);
+
+		return $this;
+	}
+
+	/**
+	 * 应用 查询作用域
+	 * 
+	 * @return $this
+	 */
+	public function applyQueryScopes()
+	{
+		if (isset($this->queryScope)) {
+			// 执行
+			call_user_func($this->queryScope, $this);
+			// $queryScope = $this->queryScope;
+			// $queryScope($this);
+
+			// 删除 防止重复执行
+			unset($this->queryScope);
+		}
+
+		return $this;
+	}
+
 // ---------------------- 本地宏 ----------------------
 	/**
 	 * 本地宏
@@ -38,7 +98,7 @@ class Builder
 	 * @param \Closure
 	 * @return void
 	 */
-	public function macro(string $key, \Closure $callback)
+	public function macro(string $key, Closure $callback): void
 	{
 		$this->localMacros[$key] = $callback;
 	}
@@ -49,7 +109,7 @@ class Builder
 	 * @param string $key
 	 * @return bool
 	 */
-	public function hasMacro(string $key)
+	public function hasMacro(string $key): bool
 	{
 		return isset($this->localMacros[$key]);
 	}
@@ -61,7 +121,7 @@ class Builder
 	 * @param array $parameters
 	 * @return mixed
 	 */
-	public function performMacro(string $key, array $parameters)
+	public function performMacro(string $key, array $parameters = [])
 	{
 		array_unshift($parameters, $this);
 
@@ -103,20 +163,21 @@ class Builder
 	/**
 	 * 查询模型 实例
 	 * 
-	 * @var \Xzb\Ci3\Core\Eloquent\Model
+	 * @var \Xzb\Ci3\Database\Eloquent\Model
 	 */
 	protected $model;
 
 	/**
 	 * 设置 查询模型 实例
 	 * 
-	 * @param \Xzb\Ci3\Core\Eloquent\Model $model
+	 * @param \Xzb\Ci3\Database\Eloquent\Model $model
 	 * @return $this
 	 */
 	public function setModel($model)
 	{
 		$this->model = $model;
 
+		// 设置 关联数据表时, 检测是否已设置, 防止重复设置
 		$qbFromReflectionProperty = (new \ReflectionClass($this->query))->getProperty('qb_from');
 		$qbFromReflectionProperty->setAccessible(true);
 		// 未设置 数据表
@@ -131,7 +192,7 @@ class Builder
 	/**
 	 * 获取 查询模型 实例
 	 * 
-	 * @return \Xzb\Ci3\Core\Eloquent\Model
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 */
 	public function getModel()
 	{
@@ -142,7 +203,7 @@ class Builder
 	 * 创建 查询模型 新实例
 	 * 
 	 * @param array $attributes
-	 * @return \Xzb\Ci3\Core\Eloquent\Model
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 */
 	public function newModelInstance($attributes = [])
 	{
@@ -154,7 +215,7 @@ class Builder
 	 * 创建
 	 * 
 	 * @param array $attributes
-	 * @return \Xzb\Ci3\Core\Eloquent\Model
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 */
 	public function create(array $attributes)
 	{
@@ -170,17 +231,22 @@ class Builder
 	 * 
 	 * @param arary $values
 	 * @return bool
+	 * 
+	 * @throws \Xzb\Ci3\Database\ModelException
 	 */
 	public function insert(array $values)
 	{
 		if (empty($values)) {
-			throw new RuntimeException('No insert data on model [' . get_class($this->model) . ']');
+			throw ModelException::insertDataNotExist('No insert data on model [' . get_class($this->model) . ']');
 		}
 
+		// 检测 是否为 二维数组
 		if (! is_array(reset($values))) {
+			// 转为 二维数组
 			$values = [$values];
 		}
 		else {
+			// 循环 排序key
 			foreach ($values as $key => $value) {
 				ksort($value);
 
@@ -190,7 +256,7 @@ class Builder
 
 		$rows = $this->query->insert_batch('', $values);
 		if (! $rows) {
-			throw new QueryException($message = $modelQuery->error());
+			throw ModelException::insertFailed($message = $this->error());
 		}
 
 		return true;
@@ -203,29 +269,71 @@ class Builder
 	 * @param array $attributes
 	 * @return int
 	 */
-	public function update(array $attributes)
+	public function update(array $attributes): int
 	{
 		// 更新
-		$result = $this->query->set($attributes)->update();
+		$result = $this->query->set($this->addUpdatedAtColumn($attributes))->update();
+		if (! $result) {
+			throw ModelException::updateFailed($message = $this->error());
+		}
+
 		// 影响条数
 		$rows = $this->query->affected_rows();
-		if (! $result) {
-			throw new QueryException($message = $modelQuery->error());
-		}
 
 		return $rows;
 	}
 
+	/**
+	 * 添加 更新时间 列
+	 * 
+	 * @param array $values
+	 * @return array
+	 */
+	protected function addUpdatedAtColumn(array $values)
+	{
+		if (
+			// 自动维护 操作时间
+			$this->model->usesTimestamps()
+			// 更新时间列 存在
+			&& $this->model->getUpdatedAtColumn()
+		) {
+			$column = $this->model->getUpdatedAtColumn();
+			$time = $this->model->freshStorageDateFormatTimestamp();
+
+			$values = array_merge([ $column => $time ], $values);
+		}
+
+		return $values;
+	}
+
 // ---------------------- 删除 ----------------------
+	/**
+	 * 删除功能 替换函数
+	 * 
+	 * @var \Closure
+	 */
+	protected $onDelete;
+
+	/**
+	 * 注册 替换默认删除功能 替换函数
+	 * 
+	 * @param \Closure $callback
+	 * @return void
+	 */
+	public function onDelete(Closure $callback): void
+	{
+		$this->onDelete = $callback;
+	}
+
 	/**
 	 * 删除
 	 * 
 	 * @return int
 	 */
-	public function delete()
+	public function delete(): int
 	{
-		if ($this->hasMacro($method = 'onDelete')) {
-			return $this->performMacro($method, $parameters = []);
+		if (isset($this->onDelete)) {
+			return call_user_func($this->onDelete, $this);
 		}
 
 		return $this->forceDelete();
@@ -236,25 +344,135 @@ class Builder
 	 * 
 	 * @return int
 	 */
-	public function forceDelete()
+	public function forceDelete(): int
 	{
 		// 删除
 		$result = $this->query->delete();
+		if (! $result) {
+			throw ModelException::deleteFailed($message = $this->error());
+		}
+
 		// 影响条数
 		$rows = $this->query->affected_rows();
-		if (! $result) {
-			throw new QueryException($message = $modelQuery->error());
-		}
 
 		return $rows;
 	}
 
-// ---------------------- 软删除 ----------------------
-	// 恢复 Restore
-	// 恢复 或 创建 RestoreOrCreate
-	// 全部 WithTrashed
-	// 未删除 WithoutTrashed
-	// 已删除 OnlyTrashed
+// ---------------------- 读取 ----------------------
+	/**
+	 * 获取 模型集合
+	 * 
+	 * @param array|string $columns
+	 * @return \Xzb\Ci3\Database\Conllection
+	 * 
+	 * @throws \Xzb\Ci3\Database\ModelException
+	 */
+	public function getModels($columns = [])
+	{
+		$query = $this->query->select($columns)->get();
+		if ($query === false) {
+			throw ModelException::selectFailed($message = $this->error());
+		}
+
+		$instance = $this->newModelInstance();
+
+		return $instance->newCollection(array_map(function ($item) use ($instance) {
+			$model = $instance->newInstanceFromBuilder($item);
+
+			return $model;
+		}, $query->result_array()));
+	}
+
+	/**
+	 * 读取 记录
+	 * 
+	 * @param array|string $columns
+	 * 
+	 * @throws \Xzb\Ci3\Database\ModelException
+	 */
+	public function get($columns = [])
+	{
+		return $this->applyQueryScopes()->getModels($columns);
+	}
+
+	/**
+	 * 唯一记录
+	 * 
+	 * @param array|string $columns
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
+	 * 
+	 * @throws \Xzb\Ci3\Database\Eloquent\RecordsNotFoundException
+	 * @throws \Xzb\Ci3\Database\ModelException
+	 */
+	public function baseSole($columns = [])
+	{
+		$result = $this->take(2)->get($columns);
+
+		$count = $result->count();
+		if ($count === 0) {
+			throw new RecordsNotFoundException;
+		}
+
+		if ($count > 1) {
+			throw ModelException::MultipleRecordsFound($count . ' records were found');
+		}
+
+		return $result->first();
+	}
+
+	/**
+	 * 读取 唯一记录
+	 * 
+	 * @param array|string $columns
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
+	 * 
+	 * @throws \Xzb\Ci3\Database\ModelException
+	 */
+	public function sole($columns = [])
+	{
+		try {
+			return $this->baseSole($columns);
+		}
+		catch (RecordsNotFoundException $exception) {
+			throw ModelException::ModelNotFound('No query results for model [' . get_class($this->model) . '] ');
+		}
+	}
+
+	/**
+	 * 总数
+	 * 
+	 * @return int
+	 */
+	public function count(): int
+	{
+		return $this->applyQueryScopes()->query->count_all_results();
+	}
+
+	/**
+	 * 偏移量 分页
+	 * 
+	 * @param int|null $perPage
+	 * @param array|string $columns
+	 * @param string $pageName
+	 * @param int|null $page
+	 * 
+	 * @throws \Xzb\Ci3\Database\ModelException
+	 */
+	public function offsetPaginate($perPage = null, $columns = [], $pageName = 'page', $page = null)
+	{
+		$page = $page ?: Paginator::resolveCurrentPage($pageName);
+		$perPage = $perPage ?: $this->model->getPerPage();
+
+		$builder = $this->applyQueryScopes();
+
+		$total = $builder->query->count_all_results('', $reset = false);
+
+		$results = $total
+					? $builder->forPage($page, $perPage)->get($columns)
+					: $this->model->newCollection();
+
+		return new Paginator($results, $total, $perPage, $page);
+	}
 
 // ---------------------- 查询构造器 扩展 ----------------------
 	/**
@@ -298,6 +516,130 @@ class Builder
 		return $this;
 	}
 
+	/**
+	 * 主键 条件
+	 * 
+	 * AND WHERE
+	 * 
+	 * @param mixed $id
+	 * @param array $wheres
+	 * @return $this
+	 */
+	public function wherePrimaryKey($id, array $wheres = [])
+	{
+		if (in_array($this->model->getPrimaryKeyType(), ['int', 'integer'])) {
+			$id = is_array($id)
+					? array_map(function ($value) { return (int)$value; }, $id)
+					: (int)$id;
+		}
+
+		$wheres = array_merge([
+			$this->model->getPrimaryKeyName() => $id
+		], $wheres);
+
+		return $this->whereBatch($wheres);
+	}
+
+	/**
+	 * 多 模糊匹配
+	 * 
+	 * AND (LIKE OR LIKE)
+	 * 
+	 * @param array $columns
+	 * @param string $keyword
+	 * @param string $side
+	 * @return $this
+	 */
+	public function likeBatch(array $columns = [], string $keyword = null, string $side = 'both')
+	{
+		if ($columns && strlen($keyword)) {
+
+			// 条件组 开始
+			count($columns) > 1 && $this->query->group_start();
+
+			// 是否为 第一个
+			$isFirst = true;
+			foreach ($columns as $column) {
+				// 第一个
+				if ($isFirst) {
+					$this->query->like($column, $keyword, $side);
+					$isFirst = false;
+					continue;
+				}
+
+				// 其它 OR
+				$this->query->or_like($column, $keyword, $side);
+			}
+
+			// 条件组 结束
+			count($columns) > 1 && $this->query->group_end();
+		}
+
+		return $this;
+	}
+
+	/**
+	 * 多 排序
+	 * 
+	 * ORDER BY
+	 * 
+	 * @param array $orderBy
+	 * @return $this
+	 */
+	public function orderByBatch(array $orderBy)
+	{
+		foreach ($orderBy as $column => $direction) {
+			$this->query->order_by($column, $direction);
+		}
+
+		return $this;
+	}
+
+	/**
+	 * 多 分组
+	 * 
+	 * GROUP BY
+	 * 
+	 * @param array $columns
+	 * @return $this
+	 */
+	public function groupByBatch(array $columns = [])
+	{
+		// 分组
+		$this->group_by($columns);
+
+		return $this;
+	}
+
+	/**
+	 * limit 别名
+	 * 
+	 * LIMIT
+	 * 
+	 * @param int $value
+	 * @return $this
+	 */
+	public function take($value)
+	{
+		$this->query->limit($value);
+
+		return $this;
+	}
+
+	/**
+	 * 设置 分页 查询条数和偏移量
+	 * 
+	 * @param int $page
+	 * @param int $perPage
+	 * @return $this
+	 */
+	public function forPage($page, $perPage)
+	{
+		$this->query->offset(((int)$page - 1) * (int)$perPage)->limit((int)$perPage);
+
+		return $this;
+	}
+
 // ---------------------- 魔术方法 ----------------------
 	/**
 	 * 处理调用 不可访问 方法
@@ -316,83 +658,5 @@ class Builder
 
 		return $this;
 	}
-
-	//     /**
-    //  * Dynamically handle calls into the query instance.
-    //  *
-    //  * @param  string  $method
-    //  * @param  array  $parameters
-    //  * @return mixed
-    //  */
-    // public function __call($method, $parameters)
-    // {
-    //     if ($method === 'macro') {
-    //         $this->localMacros[$parameters[0]] = $parameters[1];
-
-    //         return;
-    //     }
-
-    //     if ($this->hasMacro($method)) {
-    //         array_unshift($parameters, $this);
-
-    //         return $this->localMacros[$method](...$parameters);
-    //     }
-
-    //     if (static::hasGlobalMacro($method)) {
-    //         $callable = static::$macros[$method];
-
-    //         if ($callable instanceof Closure) {
-    //             $callable = $callable->bindTo($this, static::class);
-    //         }
-
-    //         return $callable(...$parameters);
-    //     }
-
-    //     if ($this->hasNamedScope($method)) {
-    //         return $this->callNamedScope($method, $parameters);
-    //     }
-
-    //     if (in_array($method, $this->passthru)) {
-    //         return $this->toBase()->{$method}(...$parameters);
-    //     }
-
-    //     $this->forwardCallTo($this->query, $method, $parameters);
-
-    //     return $this;
-    // }
-
-    // /**
-    //  * Dynamically handle calls into the query instance.
-    //  *
-    //  * @param  string  $method
-    //  * @param  array  $parameters
-    //  * @return mixed
-    //  *
-    //  * @throws \BadMethodCallException
-    //  */
-    // public static function __callStatic($method, $parameters)
-    // {
-    //     if ($method === 'macro') {
-    //         static::$macros[$parameters[0]] = $parameters[1];
-
-    //         return;
-    //     }
-
-    //     if ($method === 'mixin') {
-    //         return static::registerMixin($parameters[0], $parameters[1] ?? true);
-    //     }
-
-    //     if (! static::hasGlobalMacro($method)) {
-    //         static::throwBadMethodCallException($method);
-    //     }
-
-    //     $callable = static::$macros[$method];
-
-    //     if ($callable instanceof Closure) {
-    //         $callable = $callable->bindTo(null, static::class);
-    //     }
-
-    //     return $callable(...$parameters);
-    // }
 
 }

@@ -39,9 +39,11 @@ trait SoftDeletes
 	/**
 	 * 强制 删除
 	 * 
+	 * 重写 父类方法
+	 * 
 	 * @return bool
 	 */
-	public function forceDelete()
+	public function forceDelete(): bool
 	{
 		// forceDeleting 强制删除前 事件
 
@@ -64,7 +66,7 @@ trait SoftDeletes
 	 * 
 	 * @return bool
 	 */
-	public function restore()
+	public function restore(): bool
 	{
 		// restoring 恢复前 事件
 
@@ -84,10 +86,13 @@ trait SoftDeletes
 	/**
 	 * 执行删除
 	 * 
+	 * 重写 父类方法
+	 * 
 	 * @return bool
 	 */
-	protected function performDelete()
+	protected function performDelete(): bool
 	{
+		// 强制删除
 		if ($this->forceDeleting) {
 			// 设置 主键条件
 			$result = $this->setPrimaryKeyWhereForDML($this->newModelQueryBuilder())
@@ -100,6 +105,7 @@ trait SoftDeletes
 			return true;
 		}
 
+		// 软删除
 		return $this->runSoftDelete();
 	}
 
@@ -108,7 +114,7 @@ trait SoftDeletes
 	 * 
 	 * @return bool
 	 */
-	protected function runSoftDelete()
+	protected function runSoftDelete(): bool
 	{
 		$time = $this->freshTimestamp();
 
@@ -141,55 +147,120 @@ trait SoftDeletes
 	 * @var array
 	 */
 	protected $extensions = [
-		'onDelete',
-		'restore',
-		// 'RestoreOrCreate', 'WithTrashed', 'WithoutTrashed', 'OnlyTrashed'
+		'withDeleted', // 全部 已删除和未删除
+		'withoutDeleted', // 未删除
+		'onlyDeleted', // 仅已删除
+		'restore', // 恢复
+		// 'RestoreOrCreate'
 	];
 
 	/**
-	 * 设置 软删除 本地宏
+	 * 模型 查询构造器
 	 * 
-	 * @param \Xzb\Ci3\Core\Eloquent\Builder $builder
-	 * @return void
+	 * @return \Xzb\Ci3\Database\Eloquent\Builder
 	 */
-	protected function  localMacroSoftDeletes(Builder $builder)
+	public function newQueryBuilder()
 	{
-		foreach ($this->extensions as $extension) {
-			$this->{'add'. ucfirst($extension)}($builder);
-		}
+		// 调用 父类方法
+		$builder = parent::newQueryBuilder();
+
+		// 软删除 作用域
+		$this->softDeleteScopes($builder);
+
+		return $builder;
 	}
 
 	/**
-	 * 添加 删除替换 扩展到 查询构造器
+	 * 软删除 作用域
 	 * 
-	 * @param \Xzb\Ci3\Core\Eloquent\Builder $builder
+	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
 	 * @return void
 	 */
-	protected function addOnDelete(Builder $builder)
+	protected function softDeleteScopes(Builder $builder)
 	{
-		$builder->macro('onDelete', function (Builder $builder) {
+		// 删除功能 替换函数
+		$builder->onDelete(function (Builder $builder) {
 			$column = $builder->getModel()->getDeletedAtColumn();
 
 			return $builder->update([
 				$column => $builder->getModel()->freshStorageDateFormatTimestamp()
 			]);
 		});
+
+		// 查询作用域
+		$builder->queryScope(function (Builder $builder) {
+			$column = $builder->getModel()->getDeletedAtColumn();
+
+			$builder->whereBatch([ $column => null ]);
+		});
+
+		// 添加 扩展
+		foreach ($this->extensions as $extension) {
+			$this->{'add'. ucfirst($extension)}($builder);
+		}
 	}
 
 	/**
 	 * 添加 恢复 扩展到 查询构造器
 	 * 
-	 * @param \Xzb\Ci3\Core\Eloquent\Builder $builder
+	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
 	 * @return void
 	 */
 	protected function addRestore(Builder $builder)
 	{
 		$builder->macro('restore', function (Builder $builder) {
-			$column = $builder->getModel()->getDeletedAtColumn();
-			return $builder->update([ $column => null ]);
+			$builder->withDeleted();
 
-            // $builder->withTrashed();
-            // return $builder->update([$builder->getModel()->getDeletedAtColumn() => null]);
+			$column = $builder->getModel()->getDeletedAtColumn();
+
+			return $builder->update([ $column => null ]);
+		});
+	}
+
+	/**
+	 * 添加 仅删除 扩展到 查询构造器
+	 * 
+	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
+	 * @return void
+	 */
+	protected function addOnlyDeleted(Builder $builder)
+	{
+		$builder->macro('onlyDeleted', function (Builder $builder) {
+			return $builder->resetQueryScope()->queryScope(function (Builder $builder) {
+				$column = $builder->getModel()->getDeletedAtColumn();
+
+				$builder->whereBatch([ $column . ' is not ' => null ]);
+			});
+		});
+	}
+
+	/**
+	 * 添加 全部(已删除和未删除) 扩展到 查询构造器
+	 * 
+	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
+	 * @return void
+	 */
+	protected function addWithDeleted(Builder $builder)
+	{
+		$builder->macro('withDeleted', function (Builder $builder) {
+			return $builder->resetQueryScope();
+		});
+	}
+
+	/**
+	 * 添加 未删除 扩展到 查询构造器
+	 * 
+	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
+	 * @return void
+	 */
+	protected function addWithoutDeleted(Builder $builder)
+	{
+		$builder->macro('withoutDeleted', function (Builder $builder) {
+			return $builder->resetQueryScope()->queryScope(function (Builder $builder) {
+				$column = $builder->getModel()->getDeletedAtColumn();
+
+				$builder->whereBatch([ $column => null ]);
+			});
 		});
 	}
 

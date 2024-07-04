@@ -3,29 +3,18 @@
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent;
 
-// 字符串 辅助函数
-use Xzb\Ci3\Helpers\Str;
-// 日期 辅助函数
-use Xzb\Ci3\Helpers\Date;
 // 转换 辅助函数
 use Xzb\Ci3\Helpers\Transform;
 // 调用转发 trait
 use Xzb\Ci3\Helpers\Traits\ForwardsCalls;
-
-// PHP 日期时间接口
-use DateTimeInterface;
-
-// 第三方 日期时间类
-use Carbon\Carbon;
-use Carbon\CarbonInterface;
 
 // 数组式访问 接口
 use ArrayAccess;
 // JSON 序列化接口
 use JsonSerializable;
 
-// PHP 异常类
-use LogicException;
+// 模型 异常类
+use Xzb\Ci3\Database\ModelException;
 
 /**
  * 模型类
@@ -35,6 +24,7 @@ class Model implements ArrayAccess, JsonSerializable
 	use Traits\HasConnections;
 	use Traits\HasTables;
     use Traits\HasAttributes;
+    // use Traits\HasEvents;
     use Traits\HasTimestamps;
     use Traits\HasTransforms;
 	use ForwardsCalls;
@@ -76,7 +66,7 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 
 	 * @return void
 	 */
-	protected function initializeTraits()
+	protected function initializeTraits(): void
 	{
 		if (! isset(static::$traitInitializers[static::class])) {
 			static::cacheTraits($this);
@@ -92,7 +82,7 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 
 	 * @return void
 	 */
-	protected static function cacheTraits()
+	protected static function cacheTraits(): void
 	{
 		$class = static::class;
 
@@ -311,6 +301,8 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 模型 转换为 JSON字符串
 	 * 
 	 * @return string
+	 * 
+	 * @throws \Xzb\Ci3\Database\ModelException
 	 */
 	public function toJson(): string
 	{
@@ -318,7 +310,7 @@ class Model implements ArrayAccess, JsonSerializable
 			return Transform::toJson($this->jsonSerialize());
 		}
 		catch (\Throwable $e) {
-			throw new RuntimeException(
+			throw ModelException::JsonEncoding(
 				'Error encoding model [' . get_class($this) . '] with ID [' . $this->getPrimaryKeyValue() . '] to JSON: ' . json_last_error_msg(),
 				$e->getCode(),
 				$e
@@ -338,15 +330,42 @@ class Model implements ArrayAccess, JsonSerializable
 	{
 		$model = new static;
 
+		// 模型 在关联数据表中 是否存在
 		$model->exists = $exists;
 
+		// 设置 关联数据表
 		$model->setTable($this->getTable());
 
-		// $model->mergeCasts($this->casts);
-
+		// 填充 属性
 		$model->fill((array)$attributes);
 
 		return $model;
+	}
+
+	/**
+	 * 创建 模型 新实例 已存在
+	 * 
+	 * @param array $attributes
+	 * @return static
+	 */
+	public function newInstanceFromBuilder($attributes = [])
+	{
+		$model = $this->newInstance([], true);
+
+		$model->setRawAttributes((array)$attributes, true);
+
+		return $model;
+	}
+
+	/**
+	 * 创建 模型集合 新实例
+	 * 
+	 * @param array $models
+	 * @return \Xzb\Ci3\Database\Eloquent\Collection
+	 */
+	public function newCollection(array $models = [])
+	{
+		return new Collection($models);
 	}
 
 // ---------------------- 保存 ----------------------
@@ -355,11 +374,12 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 
 	 * @return bool
 	 */
-	public function save()
+	public function save(): bool
 	{
 		// 模型 查询构造器
 		$modelQuery = $this->newModelQueryBuilder();
 
+		// 模型 在关联数据表 存在时 更新; 否则 创建
 		$saved = $this->exists
 					// 更新
 					? $this->performUpdate($modelQuery)
@@ -375,11 +395,16 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 
 	 * @param array $attributes
 	 * @return bool
+	 * 
+	 * @throws \Xzb\Ci3\Database\ModelException
 	 */
-	public function update(array $attributes = [])
+	public function update(array $attributes = []): bool
 	{
+		// 模型 在关联数据表中 不存在
 		if (! $this->exists) {
-			throw new LogicException('Not exist for update model [' . get_class($this) . ']');
+			throw ModelException::updateModelNotExist(
+				'Not exist for update model [' . get_class($this) . ']'
+			);
 		}
 
 		return $this->fill($attributes)->save();
@@ -391,9 +416,9 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 
 	 * @return bool
 	 */
-	public function delete()
+	public function delete(): bool
 	{
-		// 模型 不存在
+		// 模型 在关联数据表中 不存在
 		if (! $this->exists) {
 			return true;
 		}
@@ -412,7 +437,7 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 
 	 * @return bool
 	 */
-	public function forceDelete()
+	public function forceDelete(): bool
 	{
 		return $this->delete();
 	}
@@ -421,19 +446,25 @@ class Model implements ArrayAccess, JsonSerializable
 	/**
 	 * 设置 数据操作 主键条件
 	 * 
-	 * @param \Xzb\Ci3\Core\Eloquent\Builder
-	 * @return \Xzb\Ci3\Core\Eloquent\Builder
+	 * @param \Xzb\Ci3\Database\Eloquent\Builder
+	 * @return \Xzb\Ci3\Database\Eloquent\Builder
+	 * 
+	 * @throws \Xzb\Ci3\Database\ModelException
 	 */
 	protected function setPrimaryKeyWhereForDML(Builder $modelQuery)
 	{
 		// 未设置 主键
 		if (! $this->getPrimaryKeyName()) {
-			throw new LogicException('No primary key defined on model [' . get_class($this) . ']');
+			throw ModelException::primaryKeyUndefined(
+				'No primary key defined on model [' . get_class($this) . ']'
+			);
 		}
 
 		// 主键值 不存在
 		if (is_null($value = $this->getPrimaryKeyValueForDML())) {
-			throw new LogicException('No primary key value on model [' . get_class($this) . ']');
+			throw ModelException::primaryKeyValueNotExist(
+				'No primary key value on model [' . get_class($this) . ']'
+			);
 		}
 
 		// 设置 AND 条件
@@ -443,13 +474,14 @@ class Model implements ArrayAccess, JsonSerializable
 
 		return $modelQuery;
 	}
+
 	/**
 	 * 执行插入
 	 * 
-	 * @param \Xzb\Ci3\Core\Eloquent\Builder
+	 * @param \Xzb\Ci3\Database\Eloquent\Builder
 	 * @return bool
 	 */
-	protected function performInsert(Builder $modelQuery)
+	protected function performInsert(Builder $modelQuery): bool
 	{
 		// creating 创建前 事件
 
@@ -462,13 +494,7 @@ class Model implements ArrayAccess, JsonSerializable
 		$attributes = $this->getAttributes();
 
 		// 执行插入
-		$result = $modelQuery->set($attributes)->insert();
-
-		// 影响行数
-		$rows = $modelQuery->affected_rows();
-		if (! $rows) {
-			throw new QueryException($message = $modelQuery->error());
-		}
+		$result = $modelQuery->insert($attributes);
 
 		// 数据表 自增主键
 		$id = $modelQuery->insert_id();
@@ -479,7 +505,7 @@ class Model implements ArrayAccess, JsonSerializable
 			$this->setAttribute($this->getPrimaryKeyName(), $id);
 		}
 
-		// 数据表中 模型存在
+		// 模型 在关联数据表中 存在
 		$this->exists = true;
     
 		// $this->wasRecentlyCreated = true;
@@ -495,10 +521,10 @@ class Model implements ArrayAccess, JsonSerializable
 	/**
 	 * 执行更新
 	 * 
-	 * @param \Xzb\Ci3\Core\Eloquent\Builder
+	 * @param \Xzb\Ci3\Database\Eloquent\Builder
 	 * @return bool
 	 */
-	protected function performUpdate(Builder $modelQuery)
+	protected function performUpdate(Builder $modelQuery): bool
 	{
 		// 属性 未被编辑
 		if (! $this->isEdited()) {
@@ -536,22 +562,53 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 
 	 * @return bool
 	 */
-	protected function performDelete()
+	protected function performDelete(): bool
 	{
 		// 设置 主键条件
 		$rows = $this->setPrimaryKeyWhereForDML($this->newModelQueryBuilder())
 						// 删除
 						->delete();
 
-		// 数据表中 模型存在
+		// 模型 在关联数据表中 不存在
 		$this->exists = false;
 
 		return true;
 	}
 
+// ---------------------- 分页 ----------------------
+	/**
+	 * 每页条数
+	 * 
+	 * @var int
+	 */
+	protected $perPage = 15;
+
+	/**
+	 * 设置 每页条数
+	 * 
+	 * @param int $perPage
+	 * @return $this
+	 */
+	public function setPerPage(int $perPage)
+	{
+		$this->perPage = $perPage;
+
+		return $this;
+	}
+
+	/**
+	 * 获取 每页条数
+	 * 
+	 * @return int
+	 */
+	public function getPerPage(): int
+	{
+		return $this->perPage;
+	}
+
 // ---------------------- PHP JsonSerializable(JSON序列化) 预定义接口 ----------------------
 	/**
-	 * 模型 序列化成 JSON 的数据
+	 * 转为 JSON可序列化的数据
 	 * 
 	 * @return mixed
 	 */
@@ -671,7 +728,6 @@ class Model implements ArrayAccess, JsonSerializable
 	 */
 	public function __call($method, $parameters)
 	{
-		// return $this->forwardCallTo($this->newModelQueryBuilder(), $method, $parameters);
 		return $this->forwardCallTo($this->newQueryBuilder(), $method, $parameters);
 	}
 

@@ -80,7 +80,7 @@ trait HasTimestamps
 	}
 
 	/**
-	 * 新存储日期格式时间戳
+	 * 新的存储日期格式时间戳
 	 * 
 	 * @return mixed
 	 */
@@ -103,7 +103,7 @@ trait HasTimestamps
 
 		// 创建时间
 		if (
-			// 数据表 不存在
+			// 模型 在关联数据表中 不存在
 			! $this->exists
 			// 创建时间列 存在
 			&& $this->getCreatedAtColumn()
