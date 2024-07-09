@@ -18,7 +18,6 @@ trait HasTimestamps
 	 * @var string|null
 	 */
 	// const CREATED_AT = 'created_at';
-	protected $createdAt = 'created_at';
 
 	/**
 	 * 获取 创建时间 列名称
@@ -27,8 +26,7 @@ trait HasTimestamps
 	 */
 	public function getCreatedAtColumn()
 	{
-		// return static::CREATED_AT;
-		return $this->createdAt;
+		return defined(static::class.'::CREATED_AT') ? static::CREATED_AT : 'created_at';
 	}
 
 // ---------------------- 更新时间 ----------------------
@@ -38,7 +36,6 @@ trait HasTimestamps
 	 * @var string|null
 	 */
 	// const UPDATED_AT = 'updated_at';
-	protected $updatedAt = 'updated_at';
 
 	/**
 	 * 获取 更新时间 列名称
@@ -47,8 +44,7 @@ trait HasTimestamps
 	 */
 	public function getUpdatedAtColumn()
 	{
-		// return static::UPDATED_AT;
-		return $this->updatedAt;
+		return defined(static::class.'::UPDATED_AT') ? static::UPDATED_AT : 'updated_at';
 	}
 
 // ---------------------- 时间戳 ----------------------

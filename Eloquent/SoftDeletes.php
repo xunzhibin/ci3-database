@@ -32,8 +32,7 @@ trait SoftDeletes
 	 */
 	public function getDeletedAtColumn()
 	{
-		// return defined(static::class.'::DELETED_AT') ? static::DELETED_AT : 'deleted_at';
-		return $this->deletedAt ?? 'deleted_at';
+		return defined(static::class.'::DELETED_AT') ? static::DELETED_AT : 'deleted_at';
 	}
 
 	/**

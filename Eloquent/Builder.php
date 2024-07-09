@@ -6,8 +6,25 @@ namespace Xzb\Ci3\Database\Eloquent;
 // 调用转发 trait
 use Xzb\Ci3\Helpers\Traits\ForwardsCalls;
 
-// 模型 异常类
-use Xzb\Ci3\Database\ModelException;
+// 异常类
+use Xzb\Ci3\Database\Exception\{
+	// 插入失败
+	InsertFailedException,
+	// 更新失败
+	UpdateFailedException,
+	// 查询失败
+	SelectFailedException,
+	// 删除失败
+	DeleteFailedException,
+	// 缺少插入数据
+	MissingInsertDataException,
+	// 找到多个记录
+	MultipleRecordsFoundException,
+	// 未找到记录
+	RecordsNotFoundException,
+	// 模型未找到
+	ModelNotFoundException
+};
 
 // PHP 匿名函数类
 use Closure;
@@ -101,6 +118,19 @@ class Builder
 	public function macro(string $key, Closure $callback): void
 	{
 		$this->localMacros[$key] = $callback;
+	}
+
+	/**
+	 * 删除 本地宏
+	 * 
+	 * @param string $key
+	 * @return $this
+	 */
+	public function removeMacro(string $key)
+	{
+		unset($this->localMacros[$key]);
+
+		return $this;
 	}
 
 	/**
@@ -232,12 +262,13 @@ class Builder
 	 * @param arary $values
 	 * @return bool
 	 * 
-	 * @throws \Xzb\Ci3\Database\ModelException
+	 * @throws \Xzb\Ci3\Database\Exceptio\MissingInsertDataException
+	 * @throws \Xzb\Ci3\Database\Exceptio\InsertFailedException
 	 */
 	public function insert(array $values)
 	{
 		if (empty($values)) {
-			throw ModelException::insertDataNotExist('No insert data on model [' . get_class($this->model) . ']');
+			throw (new MissingInsertDataException($this->error()))->setModel($this->model);
 		}
 
 		// 检测 是否为 二维数组
@@ -256,7 +287,7 @@ class Builder
 
 		$rows = $this->query->insert_batch('', $values);
 		if (! $rows) {
-			throw ModelException::insertFailed($message = $this->error());
+			throw (new InsertFailedException($this->error()))->setModel($this->model);
 		}
 
 		return true;
@@ -268,13 +299,15 @@ class Builder
 	 * 
 	 * @param array $attributes
 	 * @return int
+	 * 
+	 * @throws \Xzb\Ci3\Database\Exception\UpdateFailedException
 	 */
 	public function update(array $attributes): int
 	{
 		// 更新
 		$result = $this->query->set($this->addUpdatedAtColumn($attributes))->update();
 		if (! $result) {
-			throw ModelException::updateFailed($message = $this->error());
+			throw (new UpdateFailedException($this->error()))->setModel($this->model);
 		}
 
 		// 影响条数
@@ -343,13 +376,15 @@ class Builder
 	 * 强制 删除
 	 * 
 	 * @return int
+	 * 
+	 * @throws \Xzb\Ci3\Database\Exception\DeleteFailedException
 	 */
 	public function forceDelete(): int
 	{
 		// 删除
 		$result = $this->query->delete();
 		if (! $result) {
-			throw ModelException::deleteFailed($message = $this->error());
+			throw (new DeleteFailedException($this->error()))->setModel($this->model);
 		}
 
 		// 影响条数
@@ -365,13 +400,13 @@ class Builder
 	 * @param array|string $columns
 	 * @return \Xzb\Ci3\Database\Conllection
 	 * 
-	 * @throws \Xzb\Ci3\Database\ModelException
+	 * @throws \Xzb\Ci3\Database\Exception\SelectFailedException
 	 */
 	public function getModels($columns = [])
 	{
 		$query = $this->query->select($columns)->get();
 		if ($query === false) {
-			throw ModelException::selectFailed($message = $this->error());
+			throw (new SelectFailedException($this->error()))->setModel($this->model);
 		}
 
 		$instance = $this->newModelInstance();
@@ -387,8 +422,6 @@ class Builder
 	 * 读取 记录
 	 * 
 	 * @param array|string $columns
-	 * 
-	 * @throws \Xzb\Ci3\Database\ModelException
 	 */
 	public function get($columns = [])
 	{
@@ -401,8 +434,8 @@ class Builder
 	 * @param array|string $columns
 	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 * 
-	 * @throws \Xzb\Ci3\Database\Eloquent\RecordsNotFoundException
-	 * @throws \Xzb\Ci3\Database\ModelException
+	 * @throws \Xzb\Ci3\Database\Exception\RecordsNotFoundException
+	 * @throws \Xzb\Ci3\Database\Exception\MultipleRecordsFoundException
 	 */
 	public function baseSole($columns = [])
 	{
@@ -410,11 +443,11 @@ class Builder
 
 		$count = $result->count();
 		if ($count === 0) {
-			throw new RecordsNotFoundException;
+			throw (new RecordsNotFoundException)->setModel($this->model);
 		}
 
 		if ($count > 1) {
-			throw ModelException::MultipleRecordsFound($count . ' records were found');
+			throw (new MultipleRecordsFoundException($count . ' records were found'))->setModel($this->model);
 		}
 
 		return $result->first();
@@ -426,7 +459,7 @@ class Builder
 	 * @param array|string $columns
 	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 * 
-	 * @throws \Xzb\Ci3\Database\ModelException
+	 * @throws \Xzb\Ci3\Database\Exception\ModelNotFoundException
 	 */
 	public function sole($columns = [])
 	{
@@ -434,7 +467,7 @@ class Builder
 			return $this->baseSole($columns);
 		}
 		catch (RecordsNotFoundException $exception) {
-			throw ModelException::ModelNotFound('No query results for model [' . get_class($this->model) . '] ');
+			throw (new ModelNotFoundException('No query results for model [' . get_class($this->model) . '] '))->setModel($this->model);
 		}
 	}
 
@@ -455,8 +488,6 @@ class Builder
 	 * @param array|string $columns
 	 * @param string $pageName
 	 * @param int|null $page
-	 * 
-	 * @throws \Xzb\Ci3\Database\ModelException
 	 */
 	public function offsetPaginate($perPage = null, $columns = [], $pageName = 'page', $page = null)
 	{

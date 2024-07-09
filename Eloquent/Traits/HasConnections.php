@@ -65,7 +65,7 @@ trait HasConnections
 	 */
 	public function newModelQueryBuilder()
 	{
-		return (new Builder($this->baseQueryBuilder()))->setModel($this);
+        return (new Builder($this->baseQueryBuilder()))->setModel($this);
 	}
 
 	/**

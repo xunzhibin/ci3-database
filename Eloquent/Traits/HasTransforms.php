@@ -6,8 +6,8 @@ namespace Xzb\Ci3\Database\Eloquent\Traits;
 // 转换 辅助函数
 use Xzb\Ci3\Helpers\Transform;
 
-// 模型 异常类
-use Xzb\Ci3\Database\ModelException;
+// 模型JSON编码失败 异常类
+use Xzb\Ci3\Database\Exception\ModelJsonEncodingFailureException;
 
 /**
  * 转换
@@ -34,6 +34,8 @@ trait HasTransforms
 	 * @param string $key
 	 * @param mixed $value
 	 * @return string
+	 * 
+	 * @throws \Xzb\Ci3\Database\Exception\ModelJsonEncodingFailureException
 	 */
 	protected function transformAttributeValueToJson(string $key, $value): string
 	{
@@ -41,11 +43,11 @@ trait HasTransforms
 			return Transform::toJson($value);
 		}
 		catch (\Throwable $e) {
-			throw ModelException::JsonEncoding(
+			throw (new ModelJsonEncodingFailureException(
 				"Unable to encode attribute [" . $key . "] for model [" . get_class($this) . "] to JSON: " . json_last_error_msg(),
 				$e->getCode(),
 				$e
-			);
+			))->setModel(static::class);
 		}
 	}
 

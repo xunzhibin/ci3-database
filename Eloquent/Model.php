@@ -13,8 +13,17 @@ use ArrayAccess;
 // JSON 序列化接口
 use JsonSerializable;
 
-// 模型 异常类
-use Xzb\Ci3\Database\ModelException;
+// 异常类
+use Xzb\Ci3\Database\Exception\{
+	// 模型不存在
+	ModelNotFoundException,
+	// 模型 缺少属性
+	ModelMissingAttributeException,
+	// 模型 缺少属性值
+	ModelMissingAttributeValueException,
+	// 模型 JSON编码失败
+	ModelJsonEncodingFailureException
+};
 
 /**
  * 模型类
@@ -302,7 +311,7 @@ class Model implements ArrayAccess, JsonSerializable
 	 * 
 	 * @return string
 	 * 
-	 * @throws \Xzb\Ci3\Database\ModelException
+	 * @throws \Xzb\Ci3\Database\Exception\ModelJsonEncodingFailureException
 	 */
 	public function toJson(): string
 	{
@@ -310,11 +319,11 @@ class Model implements ArrayAccess, JsonSerializable
 			return Transform::toJson($this->jsonSerialize());
 		}
 		catch (\Throwable $e) {
-			throw ModelException::JsonEncoding(
-				'Error encoding model [' . get_class($this) . '] with ID [' . $this->getPrimaryKeyValue() . '] to JSON: ' . json_last_error_msg(),
+			throw (new ModelJsonEncodingFailureException(
+				'Error encoding model [' . static::class . '] with ID [' . $this->getPrimaryKeyValue() . '] to JSON: ' . json_last_error_msg(),
 				$e->getCode(),
 				$e
-			);
+			))->setModel(static::class);
 		}
 	}
 
@@ -396,15 +405,13 @@ class Model implements ArrayAccess, JsonSerializable
 	 * @param array $attributes
 	 * @return bool
 	 * 
-	 * @throws \Xzb\Ci3\Database\ModelException
+	 * @throws \Xzb\Ci3\Database\Exception\ModelNotFoundException
 	 */
 	public function update(array $attributes = []): bool
 	{
 		// 模型 在关联数据表中 不存在
 		if (! $this->exists) {
-			throw ModelException::updateModelNotExist(
-				'Not exist for update model [' . get_class($this) . ']'
-			);
+			throw (new ModelNotFoundException('Not exist for update model [' . static::class . ']'))->setModel(static::class);
 		}
 
 		return $this->fill($attributes)->save();
@@ -449,22 +456,19 @@ class Model implements ArrayAccess, JsonSerializable
 	 * @param \Xzb\Ci3\Database\Eloquent\Builder
 	 * @return \Xzb\Ci3\Database\Eloquent\Builder
 	 * 
-	 * @throws \Xzb\Ci3\Database\ModelException
+	 * @throws \Xzb\Ci3\Database\Excepton\ModelMissingAttributeException
+	 * @throws \Xzb\Ci3\Database\Excepton\ModelMissingAttributeValueException
 	 */
 	protected function setPrimaryKeyWhereForDML(Builder $modelQuery)
 	{
 		// 未设置 主键
 		if (! $this->getPrimaryKeyName()) {
-			throw ModelException::primaryKeyUndefined(
-				'No primary key defined on model [' . get_class($this) . ']'
-			);
+			throw (new ModelMissingAttributeException('No primary key defined for model [' . static::class . ']'))->setModel(static::class);
 		}
 
 		// 主键值 不存在
 		if (is_null($value = $this->getPrimaryKeyValueForDML())) {
-			throw ModelException::primaryKeyValueNotExist(
-				'No primary key value on model [' . get_class($this) . ']'
-			);
+			throw (new ModelMissingAttributeValueException('No primary key value for model [' . static::class . ']'))->setModel(static::class);
 		}
 
 		// 设置 AND 条件

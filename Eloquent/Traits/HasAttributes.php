@@ -6,6 +6,9 @@ namespace Xzb\Ci3\Database\Eloquent\Traits;
 // 字符串 辅助函数
 use Xzb\Ci3\Helpers\Str;
 
+// 模型 缺少属性 异常类
+use Xzb\Ci3\Database\Excepton\ModelMissingAttributeException;
+
 /**
  * 属性
  */
@@ -51,6 +54,8 @@ trait HasAttributes
 	 * 
 	 * @param string $key
 	 * @return mixed
+	 * 
+	 * @throws \Xzb\Ci3\Database\Excepton\ModelMissingAttributeException
 	 */
 	public function getAttribute(string $key)
 	{
@@ -58,7 +63,12 @@ trait HasAttributes
 			return;
 		}
 
-		return $this->transformModelAttributeValue($key, $this->getAttributes()[$key] ?? null);
+		// 属性数组中存在 或者 存在 属性访问器
+		if (array_key_exists($key, $this->attributes) || $this->hasGetAccessor($key)) {
+			return $this->transformModelAttributeValue($key, $this->getAttributes()[$key] ?? null);
+		}
+
+		throw (new ModelMissingAttributeException('The attribute [' . $key . '] either does not exist or was not retrieved for model [' . static::class . '].'))->setModel(static::class);
 	}
 
 	/**
