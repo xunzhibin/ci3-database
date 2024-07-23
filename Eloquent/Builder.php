@@ -52,7 +52,7 @@ class Builder
 	 * 
 	 * @var array
 	 */
-	protected $queryScope;
+	protected $queryScopes;
 
 	/**
 	 * 注册 查询作用域
@@ -61,9 +61,9 @@ class Builder
 	 * @param \Closure $scope
 	 * @return $this
 	 */
-	public function queryScope(Closure $scope)
+	public function queryScope($identifier, Closure $scope)
 	{
-		$this->queryScope = $scope;
+		$this->queryScopes[$identifier] = $scope;
 
 		return $this;
 	}
@@ -71,11 +71,12 @@ class Builder
 	/**
 	 * 重置 查询作用域
 	 * 
+	 * @param string $identifier
 	 * @return $this
 	 */
-	public function resetQueryScope()
+	public function resetQueryScope($identifier)
 	{
-		unset($this->queryScope);
+		unset($this->queryScope[$identifier]);
 
 		return $this;
 	}
@@ -87,14 +88,13 @@ class Builder
 	 */
 	public function applyQueryScopes()
 	{
-		if (isset($this->queryScope)) {
-			// 执行
-			call_user_func($this->queryScope, $this);
-			// $queryScope = $this->queryScope;
-			// $queryScope($this);
-
-			// 删除 防止重复执行
-			unset($this->queryScope);
+		if ($this->queryScopes) {
+			foreach ($this->queryScopes as $identifier => $scope) {
+				// 执行
+				call_user_func($scope, $this);
+				// 删除 防止重复执行
+				unset($this->queryScopes[$identifier]);
+			}
 		}
 
 		return $this;
@@ -189,6 +189,24 @@ class Builder
 		return $this->query;
 	}
 
+	/**
+	 * 获取 基础查询构造器 属性值
+	 * 
+	 * @param string $property
+	 * @return mixed
+	 */
+	public function getQueryPropertyValue(string $property)
+	{
+		if (strncmp($property, $prefix = 'qb_', strlen($prefix)) !== 0) {
+			$property = $prefix . $property;
+		}
+
+		$reflectionProperty = (new \ReflectionClass($this->query))->getProperty($property);
+		$reflectionProperty->setAccessible(true);
+
+		return $reflectionProperty->getValue($this->query);
+	}
+
 // ---------------------- 查询模型 ----------------------
 	/**
 	 * 查询模型 实例
@@ -207,12 +225,8 @@ class Builder
 	{
 		$this->model = $model;
 
-		// 设置 关联数据表时, 检测是否已设置, 防止重复设置
-		$qbFromReflectionProperty = (new \ReflectionClass($this->query))->getProperty('qb_from');
-		$qbFromReflectionProperty->setAccessible(true);
-		// 未设置 数据表
-		if (! $qbFromReflectionProperty->getValue($this->query)) {
-			// 设置 数据表
+		// 设置 数据表
+		if (! $this->getQueryPropertyValue('from')) {
 			$this->query->from($model->getTable());
 		}
 
@@ -265,7 +279,7 @@ class Builder
 	 * @throws \Xzb\Ci3\Database\Exceptio\MissingInsertDataException
 	 * @throws \Xzb\Ci3\Database\Exceptio\InsertFailedException
 	 */
-	public function insert(array $values)
+	public function insert(array $values): bool
 	{
 		if (empty($values)) {
 			throw (new MissingInsertDataException($this->error()))->setModel($this->model);
@@ -322,7 +336,7 @@ class Builder
 	 * @param array $values
 	 * @return array
 	 */
-	protected function addUpdatedAtColumn(array $values)
+	protected function addUpdatedAtColumn(array $values): array
 	{
 		if (
 			// 自动维护 操作时间
@@ -398,12 +412,14 @@ class Builder
 	 * 获取 模型集合
 	 * 
 	 * @param array|string $columns
-	 * @return \Xzb\Ci3\Database\Conllection
+	 * @return array
 	 * 
 	 * @throws \Xzb\Ci3\Database\Exception\SelectFailedException
 	 */
-	public function getModels($columns = [])
+	public function getModels($columns = ['*']): array
 	{
+		$columns = is_array($columns) ? $columns : func_get_args();
+
 		$query = $this->query->select($columns)->get();
 		if ($query === false) {
 			throw (new SelectFailedException($this->error()))->setModel($this->model);
@@ -411,21 +427,37 @@ class Builder
 
 		$instance = $this->newModelInstance();
 
-		return $instance->newCollection(array_map(function ($item) use ($instance) {
-			$model = $instance->newInstanceFromBuilder($item);
-
-			return $model;
-		}, $query->result_array()));
+		return array_map(function ($item) use ($instance) {
+			return $instance->newInstanceFromBuilder($item);
+		}, $query->result_array());
 	}
 
 	/**
 	 * 读取 记录
 	 * 
 	 * @param array|string $columns
+	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
 	 */
-	public function get($columns = [])
+	public function get($columns = ['*'])
 	{
-		return $this->applyQueryScopes()->getModels($columns);
+		$columns = is_array($columns) ? $columns : func_get_args();
+
+		$models = $this->applyQueryScopes()->getModels($columns);
+
+		return $this->newModelInstance()->newCollection($models);
+	}
+
+	/**
+	 * 读取 查询结果的第一条记录
+	 * 
+	 * @param array|string $columns
+	 * @return \Xzb\Ci3\Database\Eloquent\Model|null
+	 */
+	public function first($columns = ['*'])
+	{
+		$columns = is_array($columns) ? $columns : func_get_args();
+
+		return $this->take(1)->get($columns)->first();
 	}
 
 	/**
@@ -437,8 +469,9 @@ class Builder
 	 * @throws \Xzb\Ci3\Database\Exception\RecordsNotFoundException
 	 * @throws \Xzb\Ci3\Database\Exception\MultipleRecordsFoundException
 	 */
-	public function baseSole($columns = [])
+	public function baseSole($columns = ['*'])
 	{
+		$columns = is_array($columns) ? $columns : func_get_args();
 		$result = $this->take(2)->get($columns);
 
 		$count = $result->count();
@@ -461,8 +494,10 @@ class Builder
 	 * 
 	 * @throws \Xzb\Ci3\Database\Exception\ModelNotFoundException
 	 */
-	public function sole($columns = [])
+	public function sole($columns = ['*'])
 	{
+		$columns = is_array($columns) ? $columns : func_get_args();
+
 		try {
 			return $this->baseSole($columns);
 		}
@@ -488,6 +523,7 @@ class Builder
 	 * @param array|string $columns
 	 * @param string $pageName
 	 * @param int|null $page
+	 * @return \Xzb\Ci3\Database\Eloquent\Paginator
 	 */
 	public function offsetPaginate($perPage = null, $columns = [], $pageName = 'page', $page = null)
 	{
@@ -526,6 +562,23 @@ class Builder
 		$message .= ' - Invalid query: ' . $this->query->last_query();
 
 		return $message;
+	}
+
+	/**
+	 * 查询 列
+	 * 
+	 * SELECT
+	 * 
+	 * @param array|string
+	 * @return $this
+	 */
+	public function select($columns)
+	{
+		$this->query->select(
+			is_array($columns) ? $columns : func_get_args()
+		);
+
+		return $this;
 	}
 
 	/**

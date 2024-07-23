@@ -30,9 +30,19 @@ trait SoftDeletes
 	 * 
 	 * @return string
 	 */
-	public function getDeletedAtColumn()
+	public function getDeletedAtColumn(): string
 	{
 		return defined(static::class.'::DELETED_AT') ? static::DELETED_AT : 'deleted_at';
+	}
+
+	/**
+	 * 获取 限定 删除时间 列
+	 * 
+	 * @return string
+	 */
+	public function getQualifyDeletedAtColumn(): string
+	{
+		return $this->qualifyColumn($this->getDeletedAtColumn());
 	}
 
 	/**
@@ -187,8 +197,8 @@ trait SoftDeletes
 		});
 
 		// 查询作用域
-		$builder->queryScope(function (Builder $builder) {
-			$column = $builder->getModel()->getDeletedAtColumn();
+		$builder->queryScope('softDeleteScope', function (Builder $builder) {
+			$column = $builder->getModel()->getQualifyDeletedAtColumn();
 
 			$builder->whereBatch([ $column => null ]);
 		});
@@ -225,7 +235,7 @@ trait SoftDeletes
 	protected function addOnlyDeleted(Builder $builder)
 	{
 		$builder->macro('onlyDeleted', function (Builder $builder) {
-			return $builder->resetQueryScope()->queryScope(function (Builder $builder) {
+			return $builder->resetQueryScope('softDeleteScope')->queryScope('softDeleteScope', function (Builder $builder) {
 				$column = $builder->getModel()->getDeletedAtColumn();
 
 				$builder->whereBatch([ $column . ' is not ' => null ]);
@@ -242,7 +252,7 @@ trait SoftDeletes
 	protected function addWithDeleted(Builder $builder)
 	{
 		$builder->macro('withDeleted', function (Builder $builder) {
-			return $builder->resetQueryScope();
+			return $builder->resetQueryScope('softDeleteScope');
 		});
 	}
 
@@ -255,7 +265,7 @@ trait SoftDeletes
 	protected function addWithoutDeleted(Builder $builder)
 	{
 		$builder->macro('withoutDeleted', function (Builder $builder) {
-			return $builder->resetQueryScope()->queryScope(function (Builder $builder) {
+			return $builder->resetQueryScope('softDeleteScope')->queryScope('softDeleteScope', function (Builder $builder) {
 				$column = $builder->getModel()->getDeletedAtColumn();
 
 				$builder->whereBatch([ $column => null ]);

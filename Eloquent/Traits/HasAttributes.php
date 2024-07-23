@@ -5,9 +5,14 @@ namespace Xzb\Ci3\Database\Eloquent\Traits;
 
 // 字符串 辅助函数
 use Xzb\Ci3\Helpers\Str;
+// 关系
+use Xzb\Ci3\Database\Eloquent\Relations\Relation;
 
 // 模型 缺少属性 异常类
-use Xzb\Ci3\Database\Excepton\ModelMissingAttributeException;
+use Xzb\Ci3\Database\Exception\{
+	ModelMissingAttributeException,
+	ModelMissingRelationException
+};
 
 /**
  * 属性
@@ -55,7 +60,7 @@ trait HasAttributes
 	 * @param string $key
 	 * @return mixed
 	 * 
-	 * @throws \Xzb\Ci3\Database\Excepton\ModelMissingAttributeException
+	 * @throws \Xzb\Ci3\Database\Exception\ModelMissingAttributeException
 	 */
 	public function getAttribute(string $key)
 	{
@@ -66,6 +71,11 @@ trait HasAttributes
 		// 属性数组中存在 或者 存在 属性访问器
 		if (array_key_exists($key, $this->attributes) || $this->hasGetAccessor($key)) {
 			return $this->transformModelAttributeValue($key, $this->getAttributes()[$key] ?? null);
+		}
+
+		// 关系 属性
+		if ($this->isRelation($key)) {
+			return $this->getRelationValue($key);
 		}
 
 		throw (new ModelMissingAttributeException('The attribute [' . $key . '] either does not exist or was not retrieved for model [' . static::class . '].'))->setModel(static::class);
@@ -175,7 +185,7 @@ trait HasAttributes
 	 * 
 	 * @return array
 	 */
-	public function getChangeAttributes()
+	public function getChangeAttributes(): array
 	{
 		return $this->changes;
 	}
@@ -546,6 +556,70 @@ trait HasAttributes
 		static::$accessorAttributeCache[$className] = array_map(function ($value) {
 			return Str::snake($value);
 		}, $matches[1]);
+	}
+
+// ---------------------- 关系 属性 ----------------------
+	/**
+	 * 是否为 关系方法
+	 * 
+	 * @param string $key
+	 * @return bool
+	 */
+	public function isRelation(string $key): bool
+	{
+		return method_exists($this, $key);
+	}
+
+	/**
+	 * 获取 关系
+	 * 
+	 * @param string $key
+	 * @return mixed
+	 */
+	public function getRelationValue(string $key)
+	{
+		// 是否已加载
+		if ($this->isRelationLoaded($key)) {
+			return $this->relations[$key];
+		}
+
+		// 不是 关系方法
+		if (! $this->isRelation($key)) {
+			return ;
+		}
+
+		// 设置 关系
+		$this->setRelation(
+			$key,
+			// 获取 关系
+			$results = $this->getRelationshipInstance($key)->getResults()
+		);
+
+		return $results;
+	}
+
+	/**
+	 * 获取 关系 实例
+	 * 
+	 * @param string $method
+	 * @return Xzb\Ci3\Database\Eloquent\Relations\Relation
+	 * 
+	 * @throws \Xzb\Ci3\Database\Exception\ModelMissingRelationException
+	 */
+	protected function getRelationshipInstance(string $method)
+	{
+		$relation = $this->{$method}();
+
+		if (! $relation instanceof Relation) {
+			$message = static::class . '::' .  $method . ' must return a relationship instance';
+			if (is_null($relation)) {
+				$message = static::class . '::' .  $method . ' must return a relationship instance, but "null" was returned. Was the "return" keyword used?';
+			}
+
+			throw new ModelMissingRelationException($message);
+		}
+
+		return $relation;
 	}
 
 }

@@ -16,7 +16,7 @@ class Paginator implements Countable, JsonSerializable
 	/**
 	 * 分页 项
 	 * 
-	 * @var \Xzb\Ci3\Database\Collection 
+	 * @var \Xzb\Ci3\Database\Eloquent\Collection 
 	 */
 	protected $items;
 
@@ -51,13 +51,13 @@ class Paginator implements Countable, JsonSerializable
 	/**
 	 * 构造函数
 	 * 
-	 * @param mixed $item
+	 * @param \Xzb\Ci3\Database\Eloquent\Collection $item
 	 * @param int $total
 	 * @param int $perPage
 	 * @param int $currentPage
 	 * @return void
 	 */
-	public function __construct($items, int $total, int $perPage, int $currentPage)
+	public function __construct(Collection $items, int $total, int $perPage, int $currentPage)
 	{
 		$this->items		= $items;
 		$this->total		= $total;
@@ -91,7 +91,7 @@ class Paginator implements Countable, JsonSerializable
 	 * 
 	 * @return int
 	 */
-	public function currentPage()
+	public function currentPage(): int
 	{
 		return $this->currentPage;
 	}
@@ -101,7 +101,7 @@ class Paginator implements Countable, JsonSerializable
 	 * 
 	 * @return int
 	 */
-	public function lastPage()
+	public function lastPage(): int
 	{
 		return $this->lastPage;
 	}

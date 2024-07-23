@@ -5,6 +5,8 @@ namespace Xzb\Ci3\Database\Eloquent;
 
 // 转换 辅助函数
 use Xzb\Ci3\Helpers\Transform;
+// 字符串 辅助函数
+use Xzb\Ci3\Helpers\Str;
 // 调用转发 trait
 use Xzb\Ci3\Helpers\Traits\ForwardsCalls;
 
@@ -36,6 +38,7 @@ class Model implements ArrayAccess, JsonSerializable
     // use Traits\HasEvents;
     use Traits\HasTimestamps;
     use Traits\HasTransforms;
+	use Traits\HasRelationships;
 	use ForwardsCalls;
 
 	/**
@@ -228,6 +231,56 @@ class Model implements ArrayAccess, JsonSerializable
 		return $this->original[$this->getPrimaryKeyName()] ?? $this->getPrimaryKeyValue();
 	}
 
+	/**
+	 * 获取 限定 模型主键
+	 * 
+	 * @return string
+	 */
+	public function getQualifyPrimaryKeyName(): string
+	{
+		return $this->qualifyColumn($this->getPrimaryKeyName());
+	}
+
+// ---------------------- 外键 ----------------------
+	/**
+	 * 获取 模型外键 名称
+	 * 
+	 * @return string
+	 */
+	public function getForeignKeyName(): string
+	{
+		return Str::snake(class_basename($this)) . '_' . $this->getPrimaryKeyName();
+	}
+
+// ---------------------- 限定列 ----------------------
+	/**
+	 * 限定列
+	 * 
+	 * @param string $column
+	 * @return string
+	 */
+	public function qualifyColumn(string $column): string
+	{
+		if (str_contains($column, '.')) {
+			return $column;
+		}
+
+		return $this->getTable() . '.' . $column;
+	}
+
+	/**
+	 * 限定列
+	 * 
+	 * @param array $columns
+	 * @return array
+	 */
+	public function qualifyColumns(array $columns): array
+	{
+		return array_map(function ($column) {
+			return $this->qualifyColumn($column);
+		}, $columns);
+	}
+
 // ---------------------- 模型转换 ----------------------
 	/**
 	 * 添加 属性访问器的 值
@@ -296,14 +349,42 @@ class Model implements ArrayAccess, JsonSerializable
 	}
 
 	/**
+	 * 模型关系 转换为 数组
+	 * 
+	 * @return array
+	 */
+	public function relationsToArray(): array
+	{
+		$attributes = [];
+
+		foreach ($this->relations as $key => $value) {
+			if (method_exists($value, $method = 'toArray')) {
+				$relation = $value->{$method}();
+			}
+			else if (is_null($value)) {
+				$relation = $value;
+			}
+
+			$key = Str::snake($key);
+
+			if (isset($relation) || is_null($value)) {
+				$attributes[$key] = $relation;
+			}
+
+			unset($relation);
+		}
+
+		return $attributes;
+	}
+
+	/**
 	 * 模型 转换为 数组
 	 * 
 	 * @return array
 	 */
 	public function toArray(): array
 	{
-		return $this->attributesToArray();
-        // return array_merge($this->attributesToArray(), $this->relationsToArray());
+		return array_merge($this->attributesToArray(), $this->relationsToArray());
 	}
 
 	/**
@@ -732,6 +813,10 @@ class Model implements ArrayAccess, JsonSerializable
 	 */
 	public function __call($method, $parameters)
 	{
+		if ($method === 'query') {
+			return $this->baseQueryBuilder()->query(...$parameters);
+		}
+
 		return $this->forwardCallTo($this->newQueryBuilder(), $method, $parameters);
 	}
 

@@ -41,4 +41,15 @@ trait HasTables
 	{
 		return $this->table ?: Str::snake(Str::plural(class_basename($this)));
 	}
+
+	/**
+	 * 获取 belongsToMany(多对多)关系的 中间联接表名称的 一段
+	 * 
+	 * @return string
+	 */
+	public function getJoiningTableSegment()
+	{
+		return Str::snake(class_basename($this));
+	}
+
 }
