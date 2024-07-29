@@ -115,7 +115,7 @@ class HasManyThrough extends Relation
 	 */
 	protected function getDefaultFor()
 	{
-		return $this->relatedModel->newCollection();
+		return $this->associationModel->newCollection();
 	}
 
 	/**

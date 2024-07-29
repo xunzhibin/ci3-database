@@ -51,11 +51,16 @@ class Model implements ArrayAccess, JsonSerializable
 	/**
 	 * 构造函数
 	 * 
+	 * @param array $attributes
 	 * @return void
 	 */
-	public function __construct()
+	public function __construct(array $attributes = [])
 	{
 		$this->initializeTraits();
+
+		$this->syncOriginalAttributes();
+
+		$this->fill($attributes);
 	}
 
 // ---------------------- trait 初始化 ----------------------
@@ -570,19 +575,14 @@ class Model implements ArrayAccess, JsonSerializable
 	{
 		// creating 创建前 事件
 
-		// 自动维护 操作时间
-		if ($this->usesTimestamps()) {
-			$this->updateTimestamps();
-		}
-
 		// 获取 插入操作 所有属性
-		$attributes = $this->getAttributes();
+		$attributes = $this->getInsertAttributes();
 
 		// 执行插入
 		$result = $modelQuery->insert($attributes);
 
 		// 数据表 自增主键
-		$id = $modelQuery->insert_id();
+		$id = $modelQuery->getQuery()->insert_id();
 
 		// 模型主键 自增
 		if ($this->getIncrementing()) {

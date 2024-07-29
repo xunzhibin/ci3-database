@@ -107,7 +107,7 @@ trait HasAttributes
 	}
 
 	/**
-	 * 设置 模型 属性
+	 * 设置 模型 属性数组
 	 * 
 	 * @param array $attributes
 	 * @param bool $sync
@@ -123,6 +123,21 @@ trait HasAttributes
 		}
 
 		return $this;
+	}
+
+	/**
+	 * 获取 插入 属性
+	 * 
+	 * @return array
+	 */
+	public function getInsertAttributes()
+	{
+		// 自动维护 操作时间
+		if ($this->usesTimestamps()) {
+			$this->updateTimestamps();
+		}
+
+		return $this->getAttributes();
 	}
 
 // ---------------------- 原始属性 ----------------------
@@ -156,6 +171,16 @@ trait HasAttributes
 		$this->original = $this->getAttributes();
 
 		return $this;
+	}
+
+	/**
+	 * 获取 原始属性
+	 * 
+	 * @return array
+	 */
+	public function getRawOriginal()
+	{
+		return $this->original;
 	}
 
 // ---------------------- 编辑、更改 属性 ----------------------

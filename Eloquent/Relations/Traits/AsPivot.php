@@ -38,35 +38,60 @@ trait AsPivot
 	}
 
 	/**
-	 * 是否有 时间戳 属性
+	 * 新建 模型 实例
 	 * 
-	 * @param array|null $attributes
-	 * @return bool
-	 */
-	public function hasTimestampAttributes(array $attributes = null): bool
-	{
-		return array_key_exists($this->getCreatedAtColumn(), $attributes ?? $this->attributes);
-	}
-
-	/**
-	 * 新建 数据透视表 模型实例
+	 * 填充属性值 需要转换
 	 * 
 	 * @param array $attributes
 	 * @param string $table
+	 * @param bool $timestamps
 	 * @param bool $exists
      * @return static
 	 */
-	public static function fromAttributes(array $attributes, string $table, bool $exists = false)
+	public static function fromAttributes(array $attributes, string $table, bool $timestamps = false, string $dateFormat = null, bool $exists = false)
 	{
 		$instance = new static;
 
-		$instance->timestamps = $instance->hasTimestampAttributes($attributes);
+		// 是否自动维护 时间戳
+		$instance->timestamps = $timestamps;
 
-		// 填充属性 并同步原始属性
-		$instance->fill($attributes)->syncOriginalAttributes();
+		// 设置 日期时间 存储格式
+		if (! is_null($dateFormat)) {
+			$instance->setDateFormat($dateFormat);
+		}
 
+		// 填充属性
+		$instance->fill($attributes)
+					// 同步原始属性
+					// ->syncOriginalAttributes()
+					// 设置 数据表
+					->setTable($table);
+
+		// 是否存在
 		$instance->exists = $exists;
 
 		return $instance;
 	}
+
+	/**
+	 * 新建 模型 实例
+	 * 
+	 * 填充属性值 无需转换
+	 * 
+	 * @param array $attributes
+	 * @param string $table
+	 * @param bool $exists
+	 */
+	public static function fromRawAttributes(array $attributes, string $table, bool $timestamps = false, string $dateFormat = null, bool $exists = false)
+	{
+		$instance = static::fromAttributes([], $table, $timestamps, $exists);
+
+		$instance->setRawAttributes(
+			array_merge($instance->getRawOriginal(), $attributes),
+			$exists
+		);
+
+		return $instance;
+	}
+
 }

@@ -72,6 +72,34 @@ class Collection implements Countable, JsonSerializable
 	}
 
 	/**
+	 * 添加 到 末尾
+	 * 
+	 * @param TValue ...$values
+	 * @return $this
+	 */
+	public function push(...$values)
+	{
+		foreach ($values as $value) {
+			$this->items[] = $value;
+		}
+
+		return $this;
+	}
+
+	/**
+	 * 获取 给定键的值
+	 * 
+	 * @param mixed $key
+	 * @return static
+	 */
+	public function pluck($key)
+	{
+        return new static($this->map(function ($item) use ($key) {
+			return $item[$key];
+		}));
+	}
+
+	/**
 	 * 每个item 映射 回调函数
 	 * 
 	 * @param callable $callback

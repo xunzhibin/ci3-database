@@ -51,6 +51,19 @@ trait HasRelationships
 	}
 
 	/**
+	 * 销毁 指定 已加载 关系
+	 * 
+	 * @param string $relation
+	 * @return $this
+	 */
+	public function unsetRelation(string $relation)
+	{
+		unset($this->relations[$relation]);
+
+		return $this;
+	}
+
+	/**
 	 * 获取 所有 已加载 关系
 	 * 
 	 * @return array
@@ -71,7 +84,7 @@ trait HasRelationships
 		return array_key_exists($relation, $this->relations);
 	}
 
-// ---------------------- 设置关系 ----------------------
+// ---------------------- 一对一 ----------------------
 	/**
 	 * 一对一 关系
 	 * 
@@ -91,6 +104,7 @@ trait HasRelationships
 		);
 	}
 
+// ---------------------- 一对多 ----------------------
 	/**
 	 * 一对多 关系
 	 * 
@@ -110,6 +124,7 @@ trait HasRelationships
 		);
 	}
 
+// ---------------------- 一对一 远程 ----------------------
 	/**
 	 * 一对一 远程关系
 	 * 
@@ -140,6 +155,7 @@ trait HasRelationships
 		);
 	}
 
+// ---------------------- 一对多 远程 ----------------------
 	/**
 	 * 一对多 远程关系
 	 * 
@@ -170,6 +186,7 @@ trait HasRelationships
 		);
 	}
 
+// ---------------------- 属于 ----------------------
 	/**
 	 * 反向 属于关系
 	 * 
@@ -178,18 +195,38 @@ trait HasRelationships
 	 * @param string $associationModel
 	 * @param string|null $parentForeignKey
 	 * @param string|null $parentPrimaryKey
+	 * @param string|null $relationKey
 	 * @return \Xzb\Ci3\Database\Eloquent\Relations\BelongsTo
 	 */
-	public function belongsTo(string $associationModel, string $parentForeignKey = null, string $parentPrimaryKey = null)
+	public function belongsTo(string $associationModel, string $parentForeignKey = null, string $parentPrimaryKey = null, string $relationKey = null)
 	{
 		return new BelongsTo(
 			$associationModel = new $associationModel,
 			$this,
 			$parentForeignKey ?: $associationModel->getForeignKeyName(),
-			$parentPrimaryKey ?: $associationModel->getPrimaryKeyName()
+			$parentPrimaryKey ?: $associationModel->getPrimaryKeyName(),
+			$this->parseBelongsToRelationKeyName($relationKey)
 		);
 	}
 
+	/**
+	 * 解析 属于 关系键名
+	 * 
+	 * @param string $relationKeyName
+	 * @return string
+	 */
+	protected function parseBelongsToRelationKeyName(string $relationKeyName = null)
+	{
+		if (is_null($relationKeyName)) {
+			[$one, $two, $caller] = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
+
+			$relationKeyName = $caller['function'];
+		}
+
+		return $relationKeyName;
+	}
+
+// ---------------------- 多对多 ----------------------
 	/**
 	 * 多对多 关系
 	 * 
@@ -214,13 +251,13 @@ trait HasRelationships
 		}
 
 		return new BelongsToMany(
-			$relatedModel,
+			$associationModel,
 			$this,
 			$table,
 			$parentForeignKey ?: $this->getForeignKeyName(),
-			$relatedForeignKey ?: $relatedModel->getForeignKeyName(),
+			$associationForeignKey ?: $associationModel->getForeignKeyName(),
 			$parentPrimaryKey ?: $this->getPrimaryKeyName(),
-			$relatedPrimaryKey ?: $relatedModel->getPrimaryKeyName()
+			$associationPrimaryKey ?: $associationModel->getPrimaryKeyName()
 		);
 	}
 
@@ -242,5 +279,6 @@ trait HasRelationships
 
 		return strtolower(implode('_', $segments));
 	}
+
 
 }

@@ -274,12 +274,12 @@ class Builder
 	 * 插入
 	 * 
 	 * @param arary $values
-	 * @return bool
+	 * @return int
 	 * 
 	 * @throws \Xzb\Ci3\Database\Exceptio\MissingInsertDataException
 	 * @throws \Xzb\Ci3\Database\Exceptio\InsertFailedException
 	 */
-	public function insert(array $values): bool
+	public function insert(array $values): int
 	{
 		if (empty($values)) {
 			throw (new MissingInsertDataException($this->error()))->setModel($this->model);
@@ -304,7 +304,7 @@ class Builder
 			throw (new InsertFailedException($this->error()))->setModel($this->model);
 		}
 
-		return true;
+		return $rows;
 	}
 
 // ---------------------- 更新 ----------------------

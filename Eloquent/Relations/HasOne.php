@@ -5,7 +5,7 @@ namespace Xzb\Ci3\Database\Eloquent\Relations;
 /**
  * 一对一 关系类
  */
-class HasOne extends HasOneOrMany
+class HasOne extends HasMany
 {
 	/**
 	 * 获取 结果
@@ -19,6 +19,16 @@ class HasOne extends HasOneOrMany
 		}
 
 		return $this->first() ?: $this->getDefaultFor();
+	}
+
+	/**
+	 * 获取 默认值
+	 * 
+	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
+	 */
+	protected function getDefaultFor()
+	{
+		return ;
 	}
 
 }

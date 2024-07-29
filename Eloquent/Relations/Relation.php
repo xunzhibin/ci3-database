@@ -78,18 +78,18 @@ abstract class Relation
 	}
 
 	/**
-	 * 获取 结果
-	 * 
-	 * @return mixed
-	 */
-	abstract public function getResults();
-
-	/**
 	 * 设置 关系查询的 基本约束
 	 * 
 	 * @return void
 	 */
 	abstract protected function addConstraints();
+
+	/**
+	 * 获取 结果
+	 * 
+	 * @return mixed
+	 */
+	abstract public function getResults();
 
 	/**
 	 * 获取 关系 默认值
@@ -105,7 +105,7 @@ abstract class Relation
 	/**
 	 * 获取 关联模型 Eloquent 查询构造器
 	 * 
-	 * @return Xzb\Ci3\Database\Eloquent\Builder;
+	 * @return Xzb\Ci3\Database\Eloquent\Builder
 	 */
 	public function getQueryBuilder()
 	{
@@ -134,25 +134,6 @@ abstract class Relation
 		return $this->associationModel->qualifyColumns($columns);
 	}
 
-	/**
-	 * 转换为 关联模型 限定列
-	 * 
-	 * @param Xzb\Ci3\Database\Eloquent\Builder|null $builder
-	 * @param array $columns
-	 * @return array
-	 */
-	protected function convertToAssociationModelQualifyColumns(array $columns = ['*'], $builder = null): array
-	{
-		if ($builder) {
-			$columns = $builder->getQueryPropertyValue('select') ? [] : $columns;
-		}
-
-		if ($columns == ['*']) {
-			$columns = [ $this->getAssociationModelQualifyColumn('*') ];
-		}
-
-		return $columns;
-	}
 
 // ---------------------- 父模型 ----------------------
 	/**
@@ -177,7 +158,7 @@ abstract class Relation
 		$columns = is_array($columns) ? $columns : func_get_args();
 
 		return $this->performQueryExtension($builder = $this->getQueryBuilder())
-						->get($this->convertToAssociationModelQualifyColumns($columns, $builder));
+						->get($this->qualifySelectColumns($columns, $builder));
 	}
 
 	/**
@@ -191,7 +172,27 @@ abstract class Relation
 		$columns = is_array($columns) ? $columns : func_get_args();
 
 		return $this->performQueryExtension($builder = $this->getQueryBuilder())
-						->first($this->convertToAssociationModelQualifyColumns($columns, $builder));
+						->first($this->qualifySelectColumns($columns, $builder));
+	}
+
+	/**
+	 * 限定 查询 列
+	 * 
+	 * @param Xzb\Ci3\Database\Eloquent\Builder|null $builder
+	 * @param array $columns
+	 * @return array
+	 */
+	protected function qualifySelectColumns(array $columns = ['*'], $builder = null): array
+	{
+		if ($builder) {
+			$columns = $builder->getQueryPropertyValue('select') ? [] : $columns;
+		}
+
+		if ($columns == ['*']) {
+			$columns = [ $this->getAssociationModelQualifyColumn('*') ];
+		}
+
+		return $columns;
 	}
 
 // ---------------------- 查询扩展 ----------------------
@@ -229,18 +230,18 @@ abstract class Relation
 	}
 
 // ---------------------- 魔术方法 ----------------------
-	/**
-	 * 处理调用 不可访问 方法
-	 * 
-	 * @param string $method
-	 * @param array $parameters
-	 * @return mixed
-	 */
-	public function __call($method, $parameters)
-	{
-		$this->setQueryExtension($method, $parameters);
+	// /**
+	//  * 处理调用 不可访问 方法
+	//  * 
+	//  * @param string $method
+	//  * @param array $parameters
+	//  * @return mixed
+	//  */
+	// public function __call($method, $parameters)
+	// {
+	// 	$this->setQueryExtension($method, $parameters);
 
-		return $this;
-	}
+	// 	return $this;
+	// }
 
 }

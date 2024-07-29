@@ -19,6 +19,13 @@ class BelongsTo extends Relation
 	protected $childModel;
 
 	/**
+	 * 关系键名
+	 * 
+	 * @var string
+	 */
+	protected $relationKeyName;
+
+	/**
 	 * 构造函数
 	 * 
 	 * @param \Xzb\Ci3\Database\Eloquent\Model $associationModel
@@ -27,9 +34,14 @@ class BelongsTo extends Relation
 	 * @param string $parentModelPrimaryKey
 	 * @return void
 	 */
-	public function __construct(Model $associationModel, Model $childModel, string $parentModelForeignKey, string $parentModelPrimaryKey)
+	public function __construct(
+		Model $associationModel, Model $childModel,
+		string $parentModelForeignKey, string $parentModelPrimaryKey,
+		string $relationKeyName
+	)
 	{
 		$this->childModel = $childModel;
+		$this->relationKeyName = $relationKeyName;
 
 		$this->parentModelForeignKey = $parentModelForeignKey;
 		$this->parentModelPrimaryKey = $parentModelPrimaryKey;
@@ -61,6 +73,47 @@ class BelongsTo extends Relation
 		}
 
 		return $this->first() ?: $this->getDefaultFor();
+	}
+
+// ---------------------- 关联(更新) ----------------------
+	/**
+	 * 关联 给定父
+	 * 
+	 * @param \Xzb\Ci3\Database\Eloquent\Model
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
+	 */
+	public function associate($model)
+	{
+		$parentModelPrimaryKeyValue = $model instanceof Model
+										? $model->getAttribute($this->parentModelPrimaryKey)
+										: $model;
+
+		$this->childModel->setAttribute($this->parentModelForeignKey, $parentModelPrimaryKeyValue);
+
+		if ($model instanceof Model) {
+			$this->childModel->setRelation($this->relationKeyName, $model);
+		}
+		else {
+			$this->childModel->unsetRelation($this->relationKeyName);
+		}
+
+		return $this->childModel;
+	}
+
+// ---------------------- 分离(移除) ----------------------
+	/**
+	 * 移除 父
+	 * 
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
+	 */
+	public function dissociate()
+	{
+		$this->childModel->setAttribute($this->parentModelForeignKey, null);
+
+		$this->childModel->unsetRelation($this->relationKeyName);
+		// $this->child->setRelation($this->relationKeyName, null);
+
+		return $this->childModel;
 	}
 
 }
