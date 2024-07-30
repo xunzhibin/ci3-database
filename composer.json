@@ -16,7 +16,6 @@
             "Xzb\\Ci3\\Database\\": ""
         },
         "classmap": [
-			"Query/CI_DB.php"
 		]
     },
     "config": {
