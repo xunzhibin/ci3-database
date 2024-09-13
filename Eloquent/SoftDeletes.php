@@ -4,10 +4,17 @@
 namespace Xzb\Ci3\Database\Eloquent;
 
 /**
- * 软删除(逻辑删除)
+ * 软删除
  */
 trait SoftDeletes
 {
+	/**
+	 * 删除时间 列名称
+	 * 
+	 * @var string|null
+	 */
+	// const DELETED_AT = 'deleted_at';
+
 	/**
 	 * 是否 强制删除
 	 * 
@@ -16,7 +23,17 @@ trait SoftDeletes
 	protected $forceDeleting = false;
 
 	/**
-	 * 初始化 软删除
+	 * 启动
+	 * 
+	 * @return void
+	 */
+	public static function bootSoftDeletes()
+	{
+		static::addGlobalScope(new SoftDeletingScope);
+	}
+
+	/**
+	 * 初始化
 	 * 
 	 * @return void
 	 */
@@ -26,251 +43,394 @@ trait SoftDeletes
 	}
 
 	/**
-	 * 获取 删除时间 列名称
+	 * 获取 删除时间 列名
 	 * 
 	 * @return string
 	 */
-	public function getDeletedAtColumn(): string
+	public function getDeletedAtColumn()
 	{
-		return defined(static::class.'::DELETED_AT') ? static::DELETED_AT : 'deleted_at';
+		return defined(static::class . '::DELETED_AT') ? static::DELETED_AT : 'deleted_at';
 	}
 
 	/**
-	 * 获取 限定 删除时间 列
-	 * 
-	 * @return string
-	 */
-	public function getQualifyDeletedAtColumn(): string
-	{
-		return $this->qualifyColumn($this->getDeletedAtColumn());
-	}
-
-	/**
-	 * 强制 删除
-	 * 
-	 * 重写 父类方法
+	 * 是否 已被软删除
 	 * 
 	 * @return bool
 	 */
-	public function forceDelete(): bool
+	// public function trashed()
+	public function isSoftDeleted()
 	{
-		// forceDeleting 强制删除前 事件
-
-		// 强制删除
-		$this->forceDeleting = true;
-
-		// 删除
-		$result = $this->delete();
-
-		// 取消 强制删除
-		$this->forceDeleting = false;
-
-		// forceDeleted 强制删除后 事件
-
-		return true;
+		return ! is_null($this->{$this->getDeletedAtColumn()});
 	}
 
+// ---------------------- 触发事件 ----------------------
 	/**
+	 * 强制删除
+	 * 
+	 * 重写 模型类 方法
+	 * 
+	 * @return int
+	 */
+	public function forceDelete()
+	{
+		// forceDeleting 强制删除前 事件
+		$this->fireModelEvent('forceDeleting');
+
+		$this->forceDeleting = true;
+
+		$result = $this->delete();
+
+		$this->forceDeleting = false;
+
+		if ($result) {
+			// forceDeleted 强制删除后 事件
+			$this->fireModelEvent('forceDeleted');
+		}
+
+		return $result;
+	}
+
+	/** 
 	 * 恢复
 	 * 
 	 * @return bool
 	 */
-	public function restore(): bool
+	public function restore()
 	{
 		// restoring 恢复前 事件
+		$this->fireModelEvent('restoring');
 
-		// 删除时间
-		$this->setAttribute($this->getDeletedAtColumn(), null);
+		$this->{$this->getDeletedAtColumn()} = null;
 
 		$this->exists = true;
 
 		$result = $this->save();
 
 		// restored 恢复后 事件
+		$this->fireModelEvent('restored');
 
 		return $result;
 	}
 
-// ---------------------- 执行删除 ----------------------
+// ---------------------- 不触发事件 ----------------------
 	/**
-	 * 执行删除
+	 * 强制删除 不触发事件
 	 * 
-	 * 重写 父类方法
+	 * 重写 模型类 方法
+	 * 
+	 * @return int
+	 */
+	public function forceDeleteQuietly()
+	{
+		return static::withoutEvents(function () {
+			return $this->forceDelete();
+		});
+	}
+
+	/**
+	 * 恢复 不触发事件
 	 * 
 	 * @return bool
 	 */
-	protected function performDelete(): bool
+	public function restoreQuietly()
 	{
-		// 强制删除
-		if ($this->forceDeleting) {
-			// 设置 主键条件
-			$result = $this->setPrimaryKeyWhereForDML($this->newModelQueryBuilder())
-							// 删除
-							->delete();
+		return static::withoutEvents(function () {
+			return $this->restore();
+		});
+	}
 
-			// 数据表中 模型存在
+// ---------------------- 执行操作 ----------------------
+	/**
+	 * 执行 删除
+	 * 
+	 * 重写 模型类 方法
+	 * 
+	 * @return int
+	 */
+	protected function performDelete(): int
+	{
+		if ($this->forceDeleting) {
+			$rows = $this->setPrimaryKeyWhereForRUD($this->newModelQuery())->forceDelete();
+
 			$this->exists = false;
 
-			return true;
+			return $rows;
 		}
 
-		// 软删除
-		return $this->runSoftDelete();
+		return $this->performSoftDelete();
 	}
 
 	/**
-	 * 执行软删除
+	 * 执行 软删除
 	 * 
-	 * @return bool
+	 * @return int
 	 */
-	protected function runSoftDelete(): bool
+	protected function performSoftDelete()
 	{
-		$time = $this->freshTimestamp();
-
-		// 删除时间
-		$this->setAttribute($this->getDeletedAtColumn(), $time);
-
-		// 更新时间
-		if ($this->usesTimestamps() && $this->getUpdatedAtColumn()) {
-			$this->setAttribute($this->getUpdatedAtColumn(), $time);
-		}
-
-		// 获取 被修改 属性
-		$editedAttributes = $this->getEditedAttributes();
+		// 删除时间 列
+		$this->{$this->getDeletedAtColumn()} = $this->freshTimestamp();
 
 		// 设置 主键条件
-		$rows = $this->setPrimaryKeyWhereForDML($this->newModelQueryBuilder())
-						// 更新
-						->update($editedAttributes);
+		$rows = $this->setPrimaryKeyWhereForRUD($this->newModelQuery())
+						->update(
+							// 获取 更新操作 所有属性
+							$this->getUpdateAttributes()
+						);
 
-		// 同步 原始属性
-		$this->syncOriginalAttributes();
+		// 同步 属性 原始状态
+		$this->syncOriginal();
 
-		return true;
+		// trashed 软删除后 事件
+		$this->fireModelEvent('trashed');
+
+		return $rows;
 	}
-
-// ---------------------- 本地宏 ----------------------
-	/**
-	 * 本地宏 扩展
-	 * 
-	 * @var array
-	 */
-	protected $extensions = [
-		'withDeleted', // 全部 已删除和未删除
-		'withoutDeleted', // 未删除
-		'onlyDeleted', // 仅已删除
-		'restore', // 恢复
-		// 'RestoreOrCreate'
-	];
-
-	/**
-	 * 模型 查询构造器
-	 * 
-	 * @return \Xzb\Ci3\Database\Eloquent\Builder
-	 */
-	public function newQueryBuilder()
-	{
-		// 调用 父类方法
-		$builder = parent::newQueryBuilder();
-
-		// 软删除 作用域
-		$this->softDeleteScopes($builder);
-
-		return $builder;
-	}
-
-	/**
-	 * 软删除 作用域
-	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
-	 * @return void
-	 */
-	protected function softDeleteScopes(Builder $builder)
-	{
-		// 删除功能 替换函数
-		$builder->onDelete(function (Builder $builder) {
-			$column = $builder->getModel()->getDeletedAtColumn();
-
-			return $builder->update([
-				$column => $builder->getModel()->freshStorageDateFormatTimestamp()
-			]);
-		});
-
-		// 查询作用域
-		$builder->queryScope('softDeleteScope', function (Builder $builder) {
-			$column = $builder->getModel()->getQualifyDeletedAtColumn();
-
-			$builder->whereBatch([ $column => null ]);
-		});
-
-		// 添加 扩展
-		foreach ($this->extensions as $extension) {
-			$this->{'add'. ucfirst($extension)}($builder);
-		}
-	}
-
-	/**
-	 * 添加 恢复 扩展到 查询构造器
-	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
-	 * @return void
-	 */
-	protected function addRestore(Builder $builder)
-	{
-		$builder->macro('restore', function (Builder $builder) {
-			$builder->withDeleted();
-
-			$column = $builder->getModel()->getDeletedAtColumn();
-
-			return $builder->update([ $column => null ]);
-		});
-	}
-
-	/**
-	 * 添加 仅删除 扩展到 查询构造器
-	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
-	 * @return void
-	 */
-	protected function addOnlyDeleted(Builder $builder)
-	{
-		$builder->macro('onlyDeleted', function (Builder $builder) {
-			return $builder->resetQueryScope('softDeleteScope')->queryScope('softDeleteScope', function (Builder $builder) {
-				$column = $builder->getModel()->getDeletedAtColumn();
-
-				$builder->whereBatch([ $column . ' is not ' => null ]);
-			});
-		});
-	}
-
-	/**
-	 * 添加 全部(已删除和未删除) 扩展到 查询构造器
-	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
-	 * @return void
-	 */
-	protected function addWithDeleted(Builder $builder)
-	{
-		$builder->macro('withDeleted', function (Builder $builder) {
-			return $builder->resetQueryScope('softDeleteScope');
-		});
-	}
-
-	/**
-	 * 添加 未删除 扩展到 查询构造器
-	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Builder $builder
-	 * @return void
-	 */
-	protected function addWithoutDeleted(Builder $builder)
-	{
-		$builder->macro('withoutDeleted', function (Builder $builder) {
-			return $builder->resetQueryScope('softDeleteScope')->queryScope('softDeleteScope', function (Builder $builder) {
-				$column = $builder->getModel()->getDeletedAtColumn();
-
-				$builder->whereBatch([ $column => null ]);
-			});
-		});
-	}
-
 }
+
+// namespace Illuminate\Database\Eloquent;
+
+// /**
+//  * @method static \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder withTrashed(bool $withTrashed = true)
+//  * @method static \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder onlyTrashed()
+//  * @method static \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder withoutTrashed()
+//  */
+// trait SoftDeletes
+// {
+//     /**
+//      * Indicates if the model is currently force deleting.
+//      *
+//      * @var bool
+//      */
+//     protected $forceDeleting = false;
+
+//     /**
+//      * Boot the soft deleting trait for a model.
+//      *
+//      * @return void
+//      */
+//     public static function bootSoftDeletes()
+//     {
+//         static::addGlobalScope(new SoftDeletingScope);
+//     }
+
+//     /**
+//      * Initialize the soft deleting trait for an instance.
+//      *
+//      * @return void
+//      */
+//     public function initializeSoftDeletes()
+//     {
+//         if (! isset($this->casts[$this->getDeletedAtColumn()])) {
+//             $this->casts[$this->getDeletedAtColumn()] = 'datetime';
+//         }
+//     }
+
+//     /**
+//      * Force a hard delete on a soft deleted model.
+//      *
+//      * @return bool|null
+//      */
+//     public function forceDelete()
+//     {
+//         if ($this->fireModelEvent('forceDeleting') === false) {
+//             return false;
+//         }
+
+//         $this->forceDeleting = true;
+
+//         return tap($this->delete(), function ($deleted) {
+//             $this->forceDeleting = false;
+
+//             if ($deleted) {
+//                 $this->fireModelEvent('forceDeleted', false);
+//             }
+//         });
+//     }
+
+//     /**
+//      * Force a hard delete on a soft deleted model without raising any events.
+//      *
+//      * @return bool|null
+//      */
+//     public function forceDeleteQuietly()
+//     {
+//         return static::withoutEvents(fn () => $this->forceDelete());
+//     }
+
+//     /**
+//      * Perform the actual delete query on this model instance.
+//      *
+//      * @return mixed
+//      */
+//     protected function performDeleteOnModel()
+//     {
+//         if ($this->forceDeleting) {
+//             return tap($this->setKeysForSaveQuery($this->newModelQuery())->forceDelete(), function () {
+//                 $this->exists = false;
+//             });
+//         }
+
+//         return $this->runSoftDelete();
+//     }
+
+//     /**
+//      * Perform the actual delete query on this model instance.
+//      *
+//      * @return void
+//      */
+//     protected function runSoftDelete()
+//     {
+//         $query = $this->setKeysForSaveQuery($this->newModelQuery());
+
+//         $time = $this->freshTimestamp();
+
+//         $columns = [$this->getDeletedAtColumn() => $this->fromDateTime($time)];
+
+//         $this->{$this->getDeletedAtColumn()} = $time;
+
+//         if ($this->usesTimestamps() && ! is_null($this->getUpdatedAtColumn())) {
+//             $this->{$this->getUpdatedAtColumn()} = $time;
+
+//             $columns[$this->getUpdatedAtColumn()] = $this->fromDateTime($time);
+//         }
+
+//         $query->update($columns);
+
+//         $this->syncOriginalAttributes(array_keys($columns));
+
+//         $this->fireModelEvent('trashed', false);
+//     }
+
+//     /**
+//      * Restore a soft-deleted model instance.
+//      *
+//      * @return bool
+//      */
+//     public function restore()
+//     {
+//         // If the restoring event does not return false, we will proceed with this
+//         // restore operation. Otherwise, we bail out so the developer will stop
+//         // the restore totally. We will clear the deleted timestamp and save.
+//         if ($this->fireModelEvent('restoring') === false) {
+//             return false;
+//         }
+
+//         $this->{$this->getDeletedAtColumn()} = null;
+
+//         // Once we have saved the model, we will fire the "restored" event so this
+//         // developer will do anything they need to after a restore operation is
+//         // totally finished. Then we will return the result of the save call.
+//         $this->exists = true;
+
+//         $result = $this->save();
+
+//         $this->fireModelEvent('restored', false);
+
+//         return $result;
+//     }
+
+//     /**
+//      * Restore a soft-deleted model instance without raising any events.
+//      *
+//      * @return bool
+//      */
+//     public function restoreQuietly()
+//     {
+//         return static::withoutEvents(fn () => $this->restore());
+//     }
+
+//     /**
+//      * Determine if the model instance has been soft-deleted.
+//      *
+//      * @return bool
+//      */
+//     public function trashed()
+//     {
+//         return ! is_null($this->{$this->getDeletedAtColumn()});
+//     }
+
+//     /**
+//      * Register a "softDeleted" model event callback with the dispatcher.
+//      *
+//      * @param  \Closure|string  $callback
+//      * @return void
+//      */
+//     public static function softDeleted($callback)
+//     {
+//         static::registerModelEvent('trashed', $callback);
+//     }
+
+//     /**
+//      * Register a "restoring" model event callback with the dispatcher.
+//      *
+//      * @param  \Closure|string  $callback
+//      * @return void
+//      */
+//     public static function restoring($callback)
+//     {
+//         static::registerModelEvent('restoring', $callback);
+//     }
+
+//     /**
+//      * Register a "restored" model event callback with the dispatcher.
+//      *
+//      * @param  \Closure|string  $callback
+//      * @return void
+//      */
+//     public static function restored($callback)
+//     {
+//         static::registerModelEvent('restored', $callback);
+//     }
+
+//     /**
+//      * Register a "forceDeleting" model event callback with the dispatcher.
+//      *
+//      * @param  \Closure|string  $callback
+//      * @return void
+//      */
+//     public static function forceDeleting($callback)
+//     {
+//         static::registerModelEvent('forceDeleting', $callback);
+//     }
+
+//     /**
+//      * Register a "forceDeleted" model event callback with the dispatcher.
+//      *
+//      * @param  \Closure|string  $callback
+//      * @return void
+//      */
+//     public static function forceDeleted($callback)
+//     {
+//         static::registerModelEvent('forceDeleted', $callback);
+//     }
+
+//     /**
+//      * Determine if the model is currently force deleting.
+//      *
+//      * @return bool
+//      */
+//     public function isForceDeleting()
+//     {
+//         return $this->forceDeleting;
+//     }
+
+//     /**
+//      * Get the name of the "deleted at" column.
+//      *
+//      * @return string
+//      */
+//     public function getDeletedAtColumn()
+//     {
+//         return defined(static::class.'::DELETED_AT') ? static::DELETED_AT : 'deleted_at';
+//     }
+
+//     /**
+//      * Get the fully qualified "deleted at" column.
+//      *
+//      * @return string
+//      */
+//     public function getQualifiedDeletedAtColumn()
+//     {
+//         return $this->qualifyColumn($this->getDeletedAtColumn());
+//     }
+// }

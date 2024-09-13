@@ -1,9 +1,10 @@
 <?php
+
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent\Relations\Traits;
 
 /**
- * 数据透视
+ * 支点
  */
 trait AsPivot
 {
@@ -12,43 +13,29 @@ trait AsPivot
 	 * 
 	 * @var string
 	 */
-	protected $parentModelForeignKey;
+	protected $parentForeignKey;
 
 	/**
 	 * 关联模型 外键
 	 * 
 	 * @var string
 	 */
-	protected $associationModelForeignKey;
+	protected $relatedForeignKey;
 
 	/**
-	 * 设置 数据透视表 模型实例的 键名
-	 * 
-	 * @param string $parentModelForeignKey
-	 * @param string $associationModelForeignKey
-	 * @return $this
-	 */
-	public function setPivotKeys(string $parentModelForeignKey, string $associationModelForeignKey)
-	{
-		$this->parentModelForeignKey = $parentModelForeignKey;
-
-		$this->associationModelForeignKey = $associationModelForeignKey;
-
-		return $this;
-	}
-
-	/**
-	 * 新建 模型 实例
-	 * 
-	 * 填充属性值 需要转换
+	 * 新建 模型实例
 	 * 
 	 * @param array $attributes
 	 * @param string $table
-	 * @param bool $timestamps
 	 * @param bool $exists
-     * @return static
+	 * @param bool $timestamps
+	 * @param string $dateFormat
+	 * @return static
 	 */
-	public static function fromAttributes(array $attributes, string $table, bool $timestamps = false, string $dateFormat = null, bool $exists = false)
+	public static function newPivotInstance(
+		array $attributes, string $table, $exists = false,
+		bool $timestamps = false, string $dateFormat = null
+	)
 	{
 		$instance = new static;
 
@@ -60,38 +47,68 @@ trait AsPivot
 			$instance->setDateFormat($dateFormat);
 		}
 
-		// 填充属性
-		$instance->fill($attributes)
-					// 同步原始属性
-					// ->syncOriginalAttributes()
-					// 设置 数据表
-					->setTable($table);
+		$instance->setTable($table)->fill($attributes);
+		// $instance->setTable($table)->fill($attributes)->syncOriginal();
 
-		// 是否存在
 		$instance->exists = $exists;
 
 		return $instance;
 	}
 
 	/**
-	 * 新建 模型 实例
-	 * 
-	 * 填充属性值 无需转换
+	 * 创建 模型实例
 	 * 
 	 * @param array $attributes
 	 * @param string $table
 	 * @param bool $exists
+	 * @param bool $timestamps
+	 * @param string $dateFormat
+	 * @return static
 	 */
-	public static function fromRawAttributes(array $attributes, string $table, bool $timestamps = false, string $dateFormat = null, bool $exists = false)
+	public static function newPivotRawInstance(
+		array $attributes, string $table, $exists = false,
+		bool $timestamps = false, string $dateFormat = null
+	)
 	{
-		$instance = static::fromAttributes([], $table, $timestamps, $exists);
+		$instance = static::newPivotInstance([], $table, $exists, $timestamps, $dateFormat);
 
 		$instance->setRawAttributes(
-			array_merge($instance->getRawOriginal(), $attributes),
-			$exists
+			array_merge($instance->getRawOriginal(), $attributes), $exists
 		);
 
 		return $instance;
+	}
+
+	/**
+	 * 设置 中间表 键名
+	 * 
+	 * @param string $parentForeignKey
+	 * @param string $relatedForeignKey
+	 * @return $this
+	 */
+	public function setPivotKeys(string $parentForeignKey, string $relatedForeignKey)
+	{
+		$this->parentForeignKey = $parentForeignKey;
+		$this->relatedForeignKey = $relatedForeignKey;
+
+		return $this;
+	}
+
+	/**
+	 * 删除
+	 * 
+	 * @return int
+	 */
+	public function delete(): int
+	{
+		if (isset($this->attributes[$this->getPrimaryKeyName()])) {
+			return parent::delete();
+		}
+
+		return $this->newQuery()->where([
+			$this->parentForeignKey => $this->original[$this->parentForeignKey] ?? $this->getAttribute($this->parentForeignKey),
+			$this->relatedForeignKey => $this->original[$this->relatedForeignKey] ?? $this->getAttribute($this->relatedForeignKey),
+		])->delete();
 	}
 
 }

@@ -3,6 +3,8 @@
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent;
 
+// 调用转发 trait
+use Xzb\Ci3\Helpers\Traits\ForwardsCalls;
 // PHP 可数 预定义接口
 use Countable;
 // JSON 序列化接口
@@ -13,6 +15,8 @@ use JsonSerializable;
  */
 class Paginator implements Countable, JsonSerializable
 {
+	use ForwardsCalls;
+
 	/**
 	 * 分页 项
 	 * 
@@ -64,6 +68,8 @@ class Paginator implements Countable, JsonSerializable
 		$this->perPage		= $perPage;
 		$this->currentPage	= $currentPage;
 		$this->lastPage		= max((int) ceil($total / $perPage), 1);
+
+		// $this->items = $items instanceof Collection ? $items : Collection::make($items);
 	}
 
 	/**
@@ -115,13 +121,47 @@ class Paginator implements Countable, JsonSerializable
 	 */
 	public static function resolveCurrentPage($pageName = 'page', $default = 1): int
 	{
-		$page = get_instance()->input->get($pageName);
+		// $page = get_instance()->input->get($pageName);
+		$page = $_GET[$pageName] ?? null;
 
 		if (filter_var($page, FILTER_VALIDATE_INT) !== false && (int)$page >= 1) {
 			return (int)$page;
 		}
 
 		return $default;
+	}
+
+	/**
+	 * 设置 集合
+	 * 
+	 * @param \Xzb\Ci3\Database\Eloquent\Collection
+	 * @return $this
+	 */
+	public function setCollection($collection)
+	{
+		$this->items = $collection;
+
+		return $this;
+	}
+
+	/**
+	 * 获取 集合
+	 * 
+	 * @return \Xzb\Ci3\Database\Eloquent\Collection
+	 */
+	public function getCollection()
+	{
+		return $this->items;
+	}
+
+	/**
+	 * 获取 集合
+	 * 
+	 * @return array
+	 */
+	public function items()
+	{
+		return $this->items->all();
 	}
 
 	/**
@@ -171,5 +211,35 @@ class Paginator implements Countable, JsonSerializable
 	{
 		return $this->toArray();
 	}
+
+// ---------------------- 魔术方法 ----------------------
+	/**
+	 * 处理调用 不可访问 方法
+	 * 
+	 * @param string $method
+	 * @param array $parameters
+	 * @return mixed
+	 */
+	public function __call($method, $parameters)
+	{
+		return $this->forwardCallTo($this->getCollection(), $method, $parameters);
+		// if ($method === 'query') {
+		// 	return $this->newBaseQueryBuilder()->query(...$parameters);
+		// }
+		// return $this->forwardCallTo($this->newQuery(), $method, $parameters);
+	}
+
+    // /**
+    //  * Make dynamic calls into the collection.
+    //  *
+    //  * @param  string  $method
+    //  * @param  array  $parameters
+    //  * @return mixed
+    //  */
+    // public function __call($method, $parameters)
+    // {
+    //     var_dump($method);
+    //     
+    // }
 
 }

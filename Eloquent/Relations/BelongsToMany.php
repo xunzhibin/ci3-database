@@ -3,55 +3,93 @@
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent\Relations;
 
-// 模型 Eloquent 查询构造器类
-use Xzb\Ci3\Database\Eloquent\Builder;
-// Eloquent 模型类 集合
-use Xzb\Ci3\Database\Eloquent\Collection;
-// Eloquent 模型类
-use Xzb\Ci3\Database\Eloquent\Model;
-// 数据透视 特性
-use Xzb\Ci3\Database\Eloquent\Relations\Traits\AsPivot;
+// 字符串 辅助函数
+use Xzb\Ci3\Helpers\Str;
 
-// 转换 辅助函数
-use Xzb\Ci3\Helpers\Transform;
+// 支点 特性
+use Traits\AsPivot;
+// Eloquent 模型
+use Xzb\Ci3\Database\Eloquent\Model;
 
 /**
- * 多对多 关系
+ * 多对多
  */
 class BelongsToMany extends Relation
 {
 	use Traits\PivotTable;
 
 	/**
-	 * 构造函数
+	 * 父模型 外键
 	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Model $associationModel
-	 * @param \Xzb\Ci3\Database\Eloquent\Model $parentModel
-	 * @param string $pivotTable
-	 * @param string $parentModelForeignKey
-	 * @param string $associationModelForeignKey
-	 * @param string $parentModelPrimaryKey
-	 * @param string $associationModelPrimaryKey
-	 * @return void
+	 * @var string
+	 */
+	protected $parentForeignKey;
+
+	/**
+	 * 父模型 主键
+	 * 
+	 * @var string
+	 */
+	protected $parentPrimaryKey;
+
+	/**
+	 * 关联模型 外键
+	 * 
+	 * @var string
+	 */
+	protected $relatedForeignKey;
+
+	/**
+	 * 关联模型 主键
+	 * 
+	 * @var string
+	 */
+	protected $relatedPrimaryKey;
+
+	/**
+	 * 中间表 关系的 访问器名
+	 * 
+	 * @var string
+	 */
+	protected $accessor = 'pivot';
+
+	/**
+	 * 构造函数
 	 */
 	public function __construct(
-        Model $associationModel, Model $parentModel, string $pivotTable,
-        string $parentModelForeignKey, string $associationModelForeignKey,
-        string $parentModelPrimaryKey, string $associationModelPrimaryKey
-    )
+		Model $parent, Model $related, string $table,
+		string $parentForeignKey, string $relatedForeignKey,
+		string $parentPrimaryKey, string $relatedPrimaryKey
+	)
 	{
-		// 父模型
-		$this->parentModelForeignKey = $parentModelForeignKey;
-		$this->parentModelPrimaryKey = $parentModelPrimaryKey;
+		$this->parentForeignKey = $parentForeignKey;
+		$this->parentPrimaryKey = $parentPrimaryKey;
+	
+		$this->relatedForeignKey = $relatedForeignKey;
+		$this->relatedPrimaryKey = $relatedPrimaryKey;
 
-		// 关联模型
-		$this->associationModelForeignKey = $associationModelForeignKey;
-		$this->associationModelPrimaryKey = $associationModelPrimaryKey;
 
-		// 解析 中间关系表(数据透视表)
-		$this->pivotTable = $this->resolvePivotTableName($pivotTable);
+		$this->table = $this->resolveTableName($table);
 
-		parent::__construct($associationModel, $parentModel);
+		parent::__construct($parent, $related);
+	}
+
+	/**
+	 * 添加 基本约束
+	 */
+	public function addConstraints()
+	{
+		// 关联 中间表
+		$this->query->join(
+			$this->table,
+			$this->relatedQualifyColumn($this->relatedPrimaryKey) . ' = ' . $this->pivotQualifyColumn($this->relatedForeignKey)
+		);
+
+		// 查询条件
+		$this->query->where(
+			$this->pivotQualifyColumn($this->parentForeignKey),
+			$this->parent->{$this->parentPrimaryKey}
+		);
 	}
 
 	/**
@@ -61,191 +99,141 @@ class BelongsToMany extends Relation
 	 */
 	public function getResults()
 	{
-		// 父模型 主键值 不存在
-		if (! strlen($this->getParentModelPrimaryKeyValue())) {
-			// 响应 默认值
-			return $this->getDefaultFor();
+		if (is_null($this->parent->{$this->parentPrimaryKey})) {
+			return $this->getDefault();
 		}
 
 		return $this->get();
 	}
 
 	/**
-	 * 设置 关系查询的 基本约束
+	 * 获取 默认结果
 	 * 
-	 * @return void
+	 * @return \Xzb\Ci3\Database\Eloquent\Collection
 	 */
-	protected function addConstraints()
+	public function getDefault()
 	{
-		$where = [
-			$this->pivotQualifyColumn($this->parentModelForeignKey) => $this->getParentModelPrimaryKeyValue()
-		];
-
-		// 关联
-		$this->setQueryExtension('join', [
-				$this->pivotTable,
-				$this->pivotQualifyColumn($this->associationModelForeignKey)
-				. '=' .
-				$this->getAssociationModelQualifyColumn($this->associationModelPrimaryKey)
-		]);
-
-		// 条件
-		$this->setQueryExtension('whereBatch', [ $where ]);
+		return parent::getDefault() ?: $this->related->newCollection();
 	}
 
 	/**
-	 * 获取 默认值
+	 * 设置 中间表 关系的访问器名
 	 * 
-	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
+	 * @param string $accessor
+	 * @return $this
 	 */
-	protected function getDefaultFor()
+	public function as(string $accessor)
 	{
-		return $this->associationModel->newCollection();
+		$this->accessor = $accessor;
+
+		return $this;
 	}
 
-	/**
-	 * 解析 中间表名称
-	 * 
-	 * @param string $table
-	 * @return string
-	 */
-	protected function resolveTableName(string $table): string
-	{
-		if (! str_contains($table, '\\') || ! class_exists($table)) {
-			return $table;
-		}
-
-		$model = new $table;
-
-		if (! $model instanceof Model) {
-			return $table;
-		}
-
-		if (in_array(AsPivot::class, class_traits($model))) {
-			$this->using($table);
-		}
-
-		return $model->getTable();
-	}
-
-// ---------------------- 读取操作 ----------------------
 	/**
 	 * 读取 记录
 	 * 
-	 * @param array|string $columns
-	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
+	 * @param array $columns
+	 * @return \Xzb\Ci3\Database\Eloquent\Collection
 	 */
-	public function get($columns = ['*'])
+	public function get(array $columns = ['*'])
 	{
-		$columns = is_array($columns) ? $columns : func_get_args();
-
-		// 执行 查询扩展
-		$builder = $this->performQueryExtension($this->getQueryBuilder());
-
-		// 执行 中间关系表(数据透视表) 查询扩展
-		$builder = $this->performPivotQueryExtension($builder);
-
-		// 查询 模型集合
-		$models = $builder->getModels(
-			$this->qualifySelectColumns($columns, $builder)
+		$models = $this->query->getModels(
+			$this->mergeSelect($columns)
 		);
 
-		foreach ($models as $model) {
-			// 获取 中间关系表(数据透视表) 属性
-			$attributes = $this->getPivotAttributes($model);
+		$this->mergePivotReltaion($models);
 
-			// 设置 模型 关系属性
-			$model->setRelation($this->accessor, $this->newExistingPivot($attributes, true));
-		}
-
-		return $this->associationModel->newCollection($models);
+		return $this->related->newCollection($models);
 	}
 
 	/**
-	 * 读取 查询结果的第一条记录
+	 * 偏移量 分页
 	 * 
-	 * @param array|string $columns
-	 * @return \Xzb\Ci3\Database\Model|null
+	 * @param int|null $perPage
+	 * @param array $columns
+	 * @param string $pageName
+	 * @param int|null $page
+	 * @return \Xzb\Ci3\Database\Eloquent\Paginator
 	 */
-	public function first($columns = ['*'])
+	public function offsetPaginate($perPage = null, $columns = ['*'], $pageName = 'page', $page = null)
 	{
-		$columns = is_array($columns) ? $columns : func_get_args();
+		$paginator = $this->query->offsetPaginate($perPage, $this->mergeSelect($columns), $pageName, $page);
 
-		return $this->get($columns)->first();
+		$this->mergePivotReltaion($paginator->items());
+
+		return $paginator;
 	}
 
 	/**
-	 * 获取 中间表 属性
+	 * 合并 查询列
 	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Model $model
+	 * @param array $columns
 	 * @return array
 	 */
-	protected function getPivotAttributes(Model $model): array
+	protected function mergeSelect(array $columns = ['*'])
 	{
-		$attributes = [];
+		if ($columns == ['*']) {
+			$columns = [ $this->related->getTable() . '.*'];
+		}
+
+		return array_merge($columns, $this->getPivotColumns());
+	}
+
+	/**
+	 * 合并中间表关系
+	 * 
+	 * @param array $models
+	 * @return void
+	 */
+	protected function mergePivotReltaion(array $models)
+	{
+		foreach ($models as $model) {
+			$pivotModel = $this->newExistingPivotInstance(
+				$this->migratePivotAttributes($model)
+			);
+
+			$model->setRelation($this->accessor, $pivotModel);
+		}
+	}
+
+	/**
+	 * 迁移 中间表 属性
+	 * 
+	 * @param \Xzb\Ci3\Database\Eloquent\Model
+	 * @return array
+	 */
+	protected function migratePivotAttributes(Model $model)
+	{
+		$values = [];
 
 		foreach ($model->getAttributes() as $key => $value) {
-			// 中间关系表(数据透视表) 列名称 前缀为 pivot_
-			if (strncmp($key, $prefix = 'pivot_', strlen($prefix)) === 0) {
-				$attributes[substr($key, strlen($prefix))] = $value;
+			if (Str::startsWith($key, $needle = 'pivot_')) {
+				$values[substr($key, strlen($needle))] = $value;
 
 				unset($model->$key);
 			}
 		}
 
-		return $attributes;
+		return $values;
 	}
 
+// ---------------------- 关联模型 操作 ----------------------
 	/**
-	 * 限定 查询 列
-	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Builder|null $builder
-	 * @param array $columns
-	 * @return array
-	 */
-	protected function qualifySelectColumns(array $columns = ['*'], $builder = null): array
-	{
-		return array_merge(
-			parent::qualifySelectColumns($columns, $builder),
-			$this->getPivotColumns()
-		);
-	}
-
-// ---------------------- 创建 关联 ----------------------
-	/**
-	 * 创建 关联
+	 * 创建 关联模型
 	 * 
 	 * @param array $attributes
 	 * @param array $pivotAttributes
-	 * @return \Xzb\Ci3\Database\Eloquent\Model
+	 * @return 
 	 */
-	public function create(array $attributes, array $pivotAttributes = [])
+	public function create(array $attributes = [], array $pivotAttributes = [])
 	{
-		$instance = $this->associationModel->newInstance($attributes);
+		$instance = $this->related->newInstance($attributes);
 
 		$instance->save();
 
 		$this->attach($instance, $pivotAttributes);
 
 		return $instance;
-	}
-
-	/**
-	 * 创建 多关联
-	 * 
-	 * @param iterable $records
-	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
-	 */
-	public function createMany(iterable $records, array $pivotAttributes = [])
-	{
-		$collection = $this->associationModel->newCollection();
-
-		foreach ($records as $key => $record) {
-			$pivotAttributes = $pivotAttributes[$key] ?? [];
-			$collection->push($this->create($record, (array)$pivotAttributes));
-		}
-
-		return $collection;
 	}
 
 }

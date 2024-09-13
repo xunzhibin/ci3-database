@@ -3,11 +3,10 @@
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent\Relations;
 
-// Eloquent 模型类
 use Xzb\Ci3\Database\Eloquent\Model;
 
 /**
- * 属于 关系
+ * 属于
  */
 class BelongsTo extends Relation
 {
@@ -16,49 +15,64 @@ class BelongsTo extends Relation
 	 * 
 	 * @var \Xzb\Ci3\Database\Eloquent\Model
 	 */
-	protected $childModel;
+	protected $child;
 
 	/**
-	 * 关系键名
+	 * 父模型 外键
 	 * 
 	 * @var string
 	 */
-	protected $relationKeyName;
+	protected $foreignKey;
+
+	/**
+	 * 父模型 主键
+	 * 
+	 * @var string
+	 */
+	protected $primaryKey;
+
+	/**
+	 * 关系 名称
+	 * 
+	 * @var string
+	 */
+	protected $relationName;
 
 	/**
 	 * 构造函数
 	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Model $associationModel
-	 * @param \Xzb\Ci3\Database\Eloquent\Model $childModel
-	 * @param string $parentModelForeignKey
-	 * @param string $parentModelPrimaryKey
+	 * @param \Xzb\Ci3\Database\Eloquent\Model $child
+	 * @param \Xzb\Ci3\Database\Eloquent\Model $related
+	 * @param string $foreignKey
+	 * @param string $primaryKey
 	 * @return void
 	 */
 	public function __construct(
-		Model $associationModel, Model $childModel,
-		string $parentModelForeignKey, string $parentModelPrimaryKey,
-		string $relationKeyName
+		Model $child, Model $related,
+		string $foreignKey, string $primaryKey,
+		string $relationName
 	)
 	{
-		$this->childModel = $childModel;
-		$this->relationKeyName = $relationKeyName;
+		$this->child = $child;
 
-		$this->parentModelForeignKey = $parentModelForeignKey;
-		$this->parentModelPrimaryKey = $parentModelPrimaryKey;
+		$this->foreignKey = $foreignKey;
+		$this->primaryKey = $primaryKey;
 
-		parent::__construct($associationModel, $associationModel);
+		$this->relationName = $relationName;
+
+		parent::__construct($related, $related);
 	}
 
 	/**
-	 * 设置 关系查询 基础约束
+	 * 添加 基本约束
 	 * 
 	 * @return void
 	 */
 	public function addConstraints()
 	{
-		$this->setQueryExtension('whereBatch', [
-			[ $this->parentModelPrimaryKey => $this->childModel->{$this->parentModelForeignKey} ]
-		]);
+		$query = $this->getRelationQuery();
+
+		$this->query->where($this->primaryKey, $this->child->{$this->foreignKey});
 	}
 
 	/**
@@ -68,52 +82,46 @@ class BelongsTo extends Relation
 	 */
 	public function getResults()
 	{
-		if (! strlen($this->childModel->{$this->parentModelForeignKey})) {
-			return $this->getDefaultFor();
+		if (is_null($this->child->{$this->foreignKey})) {
+			return $this->getDefault();
 		}
 
-		return $this->first() ?: $this->getDefaultFor();
+		return $this->query->first() ?: $this->getDefault();
 	}
 
-// ---------------------- 关联(更新) ----------------------
+// ---------------------- 子模型 操作 ----------------------
 	/**
-	 * 关联 给定父
+	 * 关联 指定 父
 	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Model
+	 * @param \Xzb\Ci3\Database\Eloquent\Model|string|int|null $model
 	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 */
 	public function associate($model)
 	{
-		$parentModelPrimaryKeyValue = $model instanceof Model
-										? $model->getAttribute($this->parentModelPrimaryKey)
-										: $model;
+		$primaryKey = $model instanceof Model ? $model->getAttribute($this->primaryKey) : $model;
 
-		$this->childModel->setAttribute($this->parentModelForeignKey, $parentModelPrimaryKeyValue);
+		$this->child->setAttribute($this->foreignKey, $primaryKey);
 
 		if ($model instanceof Model) {
-			$this->childModel->setRelation($this->relationKeyName, $model);
+			$this->child->setRelation($this->relationName, $model);
 		}
 		else {
-			$this->childModel->unsetRelation($this->relationKeyName);
+			$this->child->unsetRelation($this->relationName);
 		}
 
-		return $this->childModel;
+		return $this->child;
 	}
 
-// ---------------------- 分离(移除) ----------------------
 	/**
-	 * 移除 父
+	 * 分离 父
 	 * 
 	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 */
 	public function dissociate()
 	{
-		$this->childModel->setAttribute($this->parentModelForeignKey, null);
+		$this->child->setAttribute($this->foreignKey, null);
 
-		$this->childModel->unsetRelation($this->relationKeyName);
-		// $this->child->setRelation($this->relationKeyName, null);
-
-		return $this->childModel;
+		return $this->child->setRelation($this->relationName, null);
 	}
 
 }

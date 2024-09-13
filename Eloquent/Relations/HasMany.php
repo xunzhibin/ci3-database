@@ -3,43 +3,14 @@
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent\Relations;
 
-// 模型类
+// Eloquent 模型
 use Xzb\Ci3\Database\Eloquent\Model;
 
 /**
- * 一对多 关系 抽象类
+ * 一对多
  */
-class HasMany extends Relation
+class HasMany extends HasOneOrMany
 {
-	/**
-	 * 构造函数
-	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Model $associationModel
-	 * @param \Xzb\Ci3\Database\Eloquent\Model $parentModel
-	 * @param string $parentModelForeignKey
-	 * @param string $parentModelPrimaryKey
-	 * @return void
-	 */
-	public function __construct(Model $associationModel, Model $parentModel, string $parentModelForeignKey, string $parentModelPrimaryKey)
-	{
-		$this->parentModelForeignKey = $parentModelForeignKey;
-		$this->parentModelPrimaryKey = $parentModelPrimaryKey;
-
-		parent::__construct($associationModel, $parentModel);
-	}
-
-	/**
-	 * 设置 关系查询 基础约束
-	 * 
-	 * @return void
-	 */
-	public function addConstraints()
-	{
-		$this->setQueryExtension('whereBatch', [
-			[ $this->parentModelForeignKey => $this->getParentModelPrimaryKeyValue() ]
-		]);
-	}
-
 	/**
 	 * 获取 结果
 	 * 
@@ -47,68 +18,21 @@ class HasMany extends Relation
 	 */
 	public function getResults()
 	{
-		if (! strlen($this->getParentModelPrimaryKeyValue())) {
-			return $this->getDefaultFor();
+		if (is_null($this->getParentPrimaryKeyValue())) {
+			return $this->getDefault();
 		}
 
-		return $this->get();
+		return $this->query->get(); 
 	}
 
 	/**
-	 * 获取 默认值
+	 * 获取 默认结果
 	 * 
-	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
+	 * @return \Xzb\Ci3\Database\Eloquent\Collection
 	 */
-	protected function getDefaultFor()
+	public function getDefault()
 	{
-		return $this->associationModel->newCollection();
-	}
-
-// ---------------------- 创建 ----------------------
-	/**
-	 * 创建 关联
-	 * 
-	 * @param array $attributes
-	 * @return \Xzb\Ci3\Database\Eloquent\Model
-	 */
-	public function create(array $attributes = [])
-	{
-		$model = $this->associationModel->newInstance($attributes);
-
-		// 设置 父 外键
-		$this->setParentForeignKeyWhenCreateAssociation($model);
-
-		$model->save();
-
-		return $model;
-	}
-
-	/**
-	 * 创建 多关联
-	 * 
-	 * @param iterable $records
-	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
-	 */
-	public function createMany(iterable $records)
-	{
-		$collection = $this->associationModel->newCollection();
-
-		foreach ($records as $record) {
-			$collection->push($this->create($record));
-		}
-
-		return $collection;
-	}
-
-	/**
-	 * 创建 关联时, 设置 父 外键
-	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Model
-	 * @return void
-	 */
-	protected function setParentForeignKeyWhenCreateAssociation(Model $model)
-	{
-		$model->setAttribute($this->parentModelForeignKey, $this->getParentModelPrimaryKeyValue());
+		return parent::getDefault() ?: $this->related->newCollection();
 	}
 
 }

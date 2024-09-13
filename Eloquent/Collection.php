@@ -111,6 +111,31 @@ class Collection implements Countable, JsonSerializable
 	}
 
 	/**
+	 * 新建 集合
+	 * 
+	 * 
+	 * @param array $items
+	 * @return static
+	 */
+	public static function make($items = [])
+	{
+		return new static($items);
+	}
+
+	/**
+	 * 每个item 映射到 新类中
+	 * 
+	 * @param string $class
+	 * @param static
+	 */
+	public function mapInto($class)
+	{
+		return $this->map(function ($value) use ($class) {
+			return new $class($value);
+		});
+	}
+
+	/**
 	 * 转为 数组
 	 * 
 	 * @return array
@@ -118,7 +143,7 @@ class Collection implements Countable, JsonSerializable
 	public function toArray(): array
 	{
 		return $this->map(function ($value) {
-			if ($value instanceof Model) {
+			if (is_object($value) && method_exists($value, $method = 'toArray')) {
 				return $value->toArray();
 			}
 

@@ -3,86 +3,69 @@
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent\Relations;
 
-// 模型 Eloquent 查询构造器类
-use Xzb\Ci3\Database\Eloquent\Builder;
-// 模型实例
+// Eloquent 模型
 use Xzb\Ci3\Database\Eloquent\Model;
+// 调用转发 trait
+use Xzb\Ci3\Helpers\Traits\ForwardsCalls;
+
+// PHP 匿名函数
+use Closure;
 
 /**
  * 关系 抽象类
  */
 abstract class Relation
 {
+	use ForwardsCalls;
+
 	/**
-	 * 关联模型 实例
+	 * 父 模型 实例
 	 * 
 	 * @var \Xzb\Ci3\Database\Eloquent\Model
 	 */
-	protected $associationModel;
+	protected $parent;
 
 	/**
-	 * 关联模型 主键
-	 * 
-	 * @var string
-	 */
-	protected $associationModelPrimaryKey;
-
-	/**
-	 * 关联模型 外键
-	 * 
-	 * @var string
-	 */
-	protected $associationModelForeignKey;
-
-	/**
-	 * 父模型 实例
+	 * 关联 模型 实例
 	 * 
 	 * @var \Xzb\Ci3\Database\Eloquent\Model
 	 */
-	protected $parentModel;
+	protected $related;
 
 	/**
-	 * 父模型 主键
+	 * Eloquent 查询构造器 实例
 	 * 
-	 * @var string
+	 * @var \Xzb\Ci3\Database\Eloquent\Builder
 	 */
-	protected $parentModelPrimaryKey;
+	protected $query;
 
 	/**
-	 * 父模型 外键
+	 * 默认 结果
 	 * 
-	 * @var string
+	 * @var \Closure
 	 */
-	protected $parentModelForeignKey;
-
-	/**
-	 * 查询扩展
-	 * 
-	 * @var array
-	 */
-	protected $queryExtensions = [];
+	protected $default;
 
 	/**
 	 * 构造函数
 	 * 
-	 * @param \Xzb\Ci3\Database\Eloquent\Builder
-	 * @param \Xzb\Ci3\Database\Eloquent\Model
-	 * @return void
+	 * @param \Xzb\Ci3\Database\Eloquent\Model $parent 
+	 * @param \Xzb\Ci3\Database\Eloquent\Model $related
 	 */
-	public function __construct(Model $associationModel, Model $parentModel)
+	public function __construct(Model $parent, Model $related)
 	{
-		$this->associationModel = $associationModel;
-		$this->parentModel = $parentModel;
+		$this->parent = $parent;
+		$this->related = $related;
+		$this->query = $related->newQuery();
 
+		// 添加 关联 基本约束
 		$this->addConstraints();
 	}
 
 	/**
-	 * 设置 关系查询的 基本约束
-	 * 
-	 * @return void
+	 * 添加 基本约束
 	 */
-	abstract protected function addConstraints();
+	abstract public function addConstraints();
 
 	/**
 	 * 获取 结果
@@ -91,157 +74,91 @@ abstract class Relation
 	 */
 	abstract public function getResults();
 
+// ---------------------- 父 模型 ----------------------
 	/**
-	 * 获取 关系 默认值
+	 * 获取 父模型 实例
 	 * 
-	 * @return mixed
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 */
-	protected function getDefaultFor()
+	public function getParent()
 	{
-		return ;
+		return $this->parent;
 	}
 
-// ---------------------- 关联模型 ----------------------
+// ---------------------- 关联 模型 ----------------------
 	/**
-	 * 获取 关联模型 Eloquent 查询构造器
+	 * 获取 关联模型 实例
 	 * 
-	 * @return Xzb\Ci3\Database\Eloquent\Builder
+	 * @return \Xzb\Ci3\Database\Eloquent\Model
 	 */
-	public function getQueryBuilder()
+	public function getRelated()
 	{
-		return $this->associationModel->newQueryBuilder();
+		return $this->related;
 	}
 
 	/**
-	 * 获取 关联模型 限定列
+	 * 关联模型 限定列
 	 * 
 	 * @param string $column
 	 * @return string
 	 */
-	public function getAssociationModelQualifyColumn(string $column): string
+	public function relatedQualifyColumn($column)
 	{
-		return $this->associationModel->qualifyColumn($column);
+		return $this->related->qualifyColumn($column);
 	}
 
+// ---------------------- Eloquent 查询构造器 ----------------------
 	/**
-	 * 获取 关联模型 限定列
+	 * 获取 关系 查询构造器
 	 * 
-	 * @param array $columns
-	 * @return array
+	 * @return \Xzb\Ci3\Database\Eloquent\Builder
 	 */
-	public function getAssociationModelQualifyColumns(array $columns): array
+	protected function getRelationQuery()
 	{
-		return $this->associationModel->qualifyColumns($columns);
+		return $this->query;
 	}
 
-
-// ---------------------- 父模型 ----------------------
+// ---------------------- 默认 结果 ----------------------
 	/**
-	 * 获取 父模型 主键值
+	 * 设置 默认结果
 	 * 
-	 * @return mixed
-	 */
-	public function getParentModelPrimaryKeyValue()
-	{
-		return $this->parentModel->getAttribute($this->parentModelPrimaryKey);
-	}
-
-// ---------------------- 读取操作 ----------------------
-	/**
-	 * 读取 记录
-	 * 
-	 * @param array|string $columns
-	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
-	 */
-	public function get($columns = ['*'])
-	{
-		$columns = is_array($columns) ? $columns : func_get_args();
-
-		return $this->performQueryExtension($builder = $this->getQueryBuilder())
-						->get($this->qualifySelectColumns($columns, $builder));
-	}
-
-	/**
-	 * 读取 查询结果的第一条记录
-	 * 
-	 * @param array|string $columns
-	 * @return \Xzb\Ci3\Database\Model|null
-	 */
-	public function first($columns = ['*'])
-	{
-		$columns = is_array($columns) ? $columns : func_get_args();
-
-		return $this->performQueryExtension($builder = $this->getQueryBuilder())
-						->first($this->qualifySelectColumns($columns, $builder));
-	}
-
-	/**
-	 * 限定 查询 列
-	 * 
-	 * @param Xzb\Ci3\Database\Eloquent\Builder|null $builder
-	 * @param array $columns
-	 * @return array
-	 */
-	protected function qualifySelectColumns(array $columns = ['*'], $builder = null): array
-	{
-		if ($builder) {
-			$columns = $builder->getQueryPropertyValue('select') ? [] : $columns;
-		}
-
-		if ($columns == ['*']) {
-			$columns = [ $this->getAssociationModelQualifyColumn('*') ];
-		}
-
-		return $columns;
-	}
-
-// ---------------------- 查询扩展 ----------------------
-	/**
-	 * 设置 查询扩展
-	 * 
-	 * @param string $method
-	 * @param array $parameters
+	 * @param \Closure $callback
 	 * @return $this
 	 */
-	public function setQueryExtension(string $method, array $parameters)
+	public function default(Closure $callback)
 	{
-		$this->queryExtensions[$method] = array_merge(
-			$this->queryExtensions[$method] ?? [],
-			$parameters
-		);
+		$this->default = $callback;
 
 		return $this;
 	}
 
 	/**
-	 * 执行 查询扩展
+	 * 获取 默认结果
 	 * 
-	 * @param Xzb\Ci3\Database\Eloquent\Builder $builder
-	 * @return Xzb\Ci3\Database\Eloquent\Builder
+	 * @return mixed
 	 */
-	public function performQueryExtension(Builder $builder)
+	public function getDefault()
 	{
-		// 执行 查询 扩展
-		foreach ($this->queryExtensions as $method => $parameters) {
-			$builder->{$method}(...$parameters);
+		if ($this->default) {
+            return call_user_func($this->withDefault);
 		}
 
-		return $builder;
+		return ;
 	}
 
 // ---------------------- 魔术方法 ----------------------
-	// /**
-	//  * 处理调用 不可访问 方法
-	//  * 
-	//  * @param string $method
-	//  * @param array $parameters
-	//  * @return mixed
-	//  */
-	// public function __call($method, $parameters)
-	// {
-	// 	$this->setQueryExtension($method, $parameters);
+	/**
+	 * 处理调用 不可访问 方法
+	 * 
+	 * @param string $method
+	 * @param array $parameters
+	 * @return mixed
+	 */
+	public function __call($method, $parameters)
+	{
+		$result = $this->forwardCallTo($this->query, $method, $parameters);
 
-	// 	return $this;
-	// }
+		return $result === $this->query ? $this : $result;
+	}
 
 }

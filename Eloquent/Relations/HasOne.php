@@ -1,11 +1,12 @@
 <?php
+
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent\Relations;
 
 /**
- * 一对一 关系类
+ * 一对一
  */
-class HasOne extends HasMany
+class HasOne extends HasOneOrMany
 {
 	/**
 	 * 获取 结果
@@ -14,21 +15,11 @@ class HasOne extends HasMany
 	 */
 	public function getResults()
 	{
-		if (! strlen($this->getParentModelPrimaryKeyValue())) {
-			return $this->getDefaultFor();
+		if (is_null($this->getParentPrimaryKeyValue())) {
+			return $this->getDefault();
 		}
 
-		return $this->first() ?: $this->getDefaultFor();
-	}
-
-	/**
-	 * 获取 默认值
-	 * 
-	 * @return \Xzb\Ci3\Database\Eloquent\Conllection
-	 */
-	protected function getDefaultFor()
-	{
-		return ;
+		return $this->query->first() ?: $this->getDefault();
 	}
 
 }

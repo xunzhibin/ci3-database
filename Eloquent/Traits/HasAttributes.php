@@ -3,105 +3,73 @@
 // 命名空间
 namespace Xzb\Ci3\Database\Eloquent\Traits;
 
-// 字符串 辅助函数
-use Xzb\Ci3\Helpers\Str;
-// 关系
-use Xzb\Ci3\Database\Eloquent\Relations\Relation;
+// 转换 辅助函数
+use Xzb\Ci3\Helpers\Transform;
 
 // 模型 缺少属性 异常类
-use Xzb\Ci3\Database\Exception\{
-	ModelMissingAttributeException,
-	ModelMissingRelationException
-};
+use Xzb\Ci3\Database\Eloquent\ModelMissingAttributeException;
 
 /**
  * 属性
  */
 trait HasAttributes
 {
-// ---------------------- 属性 ----------------------
+	use Attributes\Mutator;
+	use Attributes\DateTimestamps;
+	use Attributes\Edit;
+	use Attributes\Original;
+	use Attributes\Relations;
+	use Attributes\Accessor;
+	use Attributes\Visibles;
+	use Attributes\Hides;
+	use Attributes\Cast;
+
 	/**
 	 * 模型 属性
 	 * 
 	 * @var array
 	 */
-	protected $attributes = [];
+	protected $attributes = [
+		// 属性key => 值
+	];
 
 	/**
-	 * 设置 给定属性
+	 * 模型 属性数据类型
+	 * 
+	 * @var array
+	 */
+	protected $attributeTypes = [
+		// 属性key => 数据类型
+	];
+
+// ---------------------- 属性 ----------------------
+	/**
+	 * 设置 属性
 	 * 
 	 * @param string $key
 	 * @param mixed $value
-	 * @return $this
+	 * @return mixed
 	 */
 	public function setAttribute(string $key, $value)
 	{
-		// 有 属性修改器
+		// 是否有 属性修改器
 		if ($this->hasSetMutator($key)) {
 			return $this->setMutatedAttributeValue($key, $value);
 		}
-		// 日期属性
-		else if ($this->isDateAttribute($key) && ! is_null($value)) {
+		// 是否有 属性数据类型
+		else if ($this->hasAttributeType($key)) {
+			$value = Transform::valueType($this->getAttributeType($key), $value);
+		}
+		// 是否为 日期属性
+		else if ($this->isDateAttribute($key)) {
 			$value = $this->transformToStorageDateFormat($value);
 		}
-		// JSON属性
-		else if ($this->isJsonAttribute($key) && ! is_null($value)) {
-			$value = $this->transformAttributeValueToJson($key, $value);
+		// 是否为 json中某个属性
+		if (mb_strpos($key, '->') !== false) {
+			return $this->fillJsonAttribute($key, $value);
 		}
 
 		$this->attributes[$key] = $value;
-
-		return $this;
-	}
-
-	/**
-	 * 获取 指定属性
-	 * 
-	 * @param string $key
-	 * @return mixed
-	 * 
-	 * @throws \Xzb\Ci3\Database\Exception\ModelMissingAttributeException
-	 */
-	public function getAttribute(string $key)
-	{
-		if (! $key) {
-			return;
-		}
-
-		// 属性数组中存在 或者 存在 属性访问器
-		if (array_key_exists($key, $this->attributes) || $this->hasGetAccessor($key)) {
-			return $this->transformModelAttributeValue($key, $this->getAttributes()[$key] ?? null);
-		}
-
-		// 关系 属性
-		if ($this->isRelation($key)) {
-			return $this->getRelationValue($key);
-		}
-
-		throw (new ModelMissingAttributeException('The attribute [' . $key . '] either does not exist or was not retrieved for model [' . static::class . '].'))->setModel(static::class);
-	}
-
-	/**
-	 * 获取 所有属性
-	 * 
-	 * @return array
-	 */
-	public function getAttributes(): array
-	{
-		return $this->attributes;
-	}
-
-	/**
-	 * 填充 模型 属性数组
-	 * 
-	 * @param array $attributes
-	 * @return $this
-	 */
-	public function fill(array $attributes)
-	{
-		foreach ($attributes as $key => $value) {
-			$this->setAttribute($key, $value);
-		}
 
 		return $this;
 	}
@@ -119,18 +87,73 @@ trait HasAttributes
 
 		// 是否 同步原始属性
 		if ($sync) {
-			$this->syncOriginalAttributes();
+			$this->syncOriginal();
 		}
 
 		return $this;
 	}
 
 	/**
-	 * 获取 插入 属性
+	 * 获取 指定属性
+	 * 
+	 * @param string $key
+	 * @return mixed
+	 * 
+	 * @throws \Xzb\Ci3\Database\Eloquent\ModelMissingAttributeException
+	 */
+	public function getAttribute(string $key)
+	{
+		if (! $key) {
+			return;
+		}
+
+		$value = $this->getAttributes()[$key] ?? null;
+
+		// 存在 属性访问器
+		if ($this->hasGetAccessor($key)) {
+			return $this->getAccessorAttributeValue($key, $value);
+		}
+
+		// 属性数组中存在
+		if (array_key_exists($key, $this->attributes)) {
+			// 是否为 强制转换属性
+			if ($this->isCastAttribute($key)) {
+				return Transform::valueType($this->getCastAttributeType($key), $value);
+			}
+
+			return $value;
+		}
+
+		// 关系属性
+		if ($this->isRelation($key)) {
+			return $this->getRelationValue($key);
+		}
+
+		// 抛出异常
+		if ($this->exists && ! $this->wasRecentlyCreated && is_null($value)) {
+			$message = 'The attribute [' . $key . '] either does not exist or was not retrieved for model [' . static::class . ']';
+			throw (new ModelMissingAttributeException($message));
+		}
+
+		return $value;
+	}
+
+	/**
+	 * 获取 所有属性
 	 * 
 	 * @return array
 	 */
-	public function getInsertAttributes()
+	public function getAttributes(): array
+	{
+		return $this->attributes;
+	}
+
+	/**
+	 * 获取 插入操作 属性
+	 * 
+	 * @return array
+	 */
+	public function getInsertAttributes(): array
 	{
 		// 自动维护 操作时间
 		if ($this->usesTimestamps()) {
@@ -140,511 +163,185 @@ trait HasAttributes
 		return $this->getAttributes();
 	}
 
-// ---------------------- 原始属性 ----------------------
 	/**
-	 * 模型 原始属性
-	 * 
-	 * @var array
-	 */
-	protected $original = [];
-
-	/**
-	 * 同步 原始属性
-	 * 
-	 * @param array|string $attributes
-	 * @return $this
-	 */
-	public function syncOriginalAttributes($attributes = [])
-	{
-		$attributes = is_array($attributes) ? $attributes : func_get_args();
-		if ($attributes) {
-			$modelAttributes = $this->getAttributes();
-
-			// 循环设置
-			foreach ($attributes as $attribute) {
-				$this->original[$attribute] = $modelAttributes[$attribute];
-			}
-
-			return $this;
-		}
-
-		$this->original = $this->getAttributes();
-
-		return $this;
-	}
-
-	/**
-	 * 获取 原始属性
+	 * 获取 更新操作 属性
 	 * 
 	 * @return array
 	 */
-	public function getRawOriginal()
-	{
-		return $this->original;
-	}
-
-// ---------------------- 编辑、更改 属性 ----------------------
-	/**
-	 * 更改属性
-	 * 
-	 * 最后一次 保存模型时 更改的属性
-	 * 
-	 * @var array
-	 */
-	protected $changes = [];
-
-	/**
-	 * 同步 更改属性
-	 * 
-	 * @return $this
-	 */
-	public function syncChangeAttributes()
-	{
-		$this->changes = $this->getEditedAttributes();
-
-		return $this;
-	}
-
-	/**
-	 * 获取 更改属性
-	 * 
-	 * @return array
-	 */
-	public function getChangeAttributes(): array
-	{
-		return $this->changes;
-	}
-
-	/**
-	 * 获取 被编辑的 所有属性
-	 * 
-	 * @return array
-	 */
-	public function getEditedAttributes(): array
-	{
-		$edited = [];
-
-		foreach ($this->getAttributes() as $key => $value) {
-
-			// 新值 和 原始值 是否相等
-			if (! $this->originalIsEquivalent($key)) {
-				$edited[$key] = $value;
-			}
-		}
-
-		return $edited;
-	}
-
-	/**
-	 * 属性 是否被 编辑
-	 * 
-	 * @param array|string|null $attributes
-	 * @return bool
-	 */
-	public function isEdited($attributes = null): bool
-	{
-		// 已被编辑 所有属性
-		$editedAttributes = $this->getEditedAttributes();
-
-		// 检测 指定属性
-		if ($attributes = is_array($attributes) ? $attributes : func_get_args()) {
-			// 循环检测属性 任意一个被编辑 返回true
-			foreach ($attributes as $attribute) {
-				if (array_key_exists($attribute, $editedAttributes)) {
-					return true;
-				}
-			}
-
-			return false;
-		}
-
-		return count($editedAttributes) > 0;
-	}
-
-	/**
-	 * 对比属性 新值和旧值 是否相等
-	 * 
-	 * @param string $key
-	 * @return bool
-	 */
-	public function originalIsEquivalent(string $key): bool
-	{
-		// 原始属性 不存在
-		if (! array_key_exists($key, $this->original)) {
-			return false;
-		}
-
-		$newValue = $this->attributes[$key] ?? null;
-		$oldValue = $this->original[$key] ?? null;
-
-		if ($newValue === $oldValue) {
-			return true;
-		}
-		else if (is_null($newValue)) {
-			return false;
-		}
-		// 日期属性
-		else if ($this->isDateAttribute($key)) {
-			// 转为 存储格式 进行对比
-			return $this->transformToStorageDateFormat($newValue)
-					=== $this->transformToStorageDateFormat($oldValue);
-			// 转为 Unix时间戳 进行对比
-			// return $this->transformToDateCustomFormat($newValue, $format = 'U')
-			// 		=== $this->transformToDateCustomFormat($oldValue, $format = 'U');
-		}
-		// JSON属性
-		else if ($this->isJsonAttribute($key)) {
-			// 转为 数组 进行对比
-			return $this->transformToArray($newValue) === $this->transformToArray($oldValue);
-		}
-
-		return is_numeric($newValue) && is_numeric($oldValue)
-				&& strcmp((string)$newValue, (string)$oldValue) === 0;
-	}
-
-// ---------------------- 日期属性 ----------------------
-	/**
-	 * 模型 日期属性
-	 * 
-	 * @var array
-	 */
-	protected $dates = [];
-
-	/**
-	 * 模型 日期属性 存储格式
-	 * 
-	 * @var string
-	 */
-	protected $dateFormat = 'Y-m-d H:i:s';
-
-	/**
-	 * 获取 日期属性
-	 * 
-	 * @return array
-	 */
-	public function getDateAttributes(): array
+	public function getUpdateAttributes(): array
 	{
 		// 自动维护 操作时间
 		if ($this->usesTimestamps()) {
-			return array_unique(array_merge($this->dates, [
-				$this->getCreatedAtColumn(),
-				$this->getUpdatedAtColumn(),
-			]));
+			$this->updateTimestamps();
 		}
 
-		return $this->dates;
+		return $this->getEditedAttributes();
 	}
 
 	/**
-	 * 是否为 日期属性
+	 * 获取 可序列化 属性
+	 * 
+	 * @return array
+	 */
+	protected function getArrayableAttributes()
+	{
+		return $this->getArrayableItems($this->getAttributes());
+	}
+
+	/**
+	 * 获取 可序列化 项
+	 * 
+	 * @param array
+	 * @return array
+	 */
+	protected function getArrayableItems(array $values)
+	{
+		if (count($this->getVisible()) > 0) {
+			$values = array_intersect_key($values, array_flip($this->getVisible()));
+		}
+
+		if (count($this->getHidden()) > 0) {
+			$values = array_diff_key($values, array_flip($this->getHidden()));
+		}
+
+		return $values;
+	}
+
+// ---------------------- 属性类型 ----------------------
+	/**
+	 * 获取 属性数据类型
+	 * 
+	 * @return array
+	 */
+	public function getAttributeTypes(): array
+	{
+		return array_merge(
+			[ $this->getPrimaryKeyName() => $this->getPrimaryKeyType() ],
+			$this->attributeTypes
+		);
+	}
+
+	/**
+	 * 是否有 属性数据类型
 	 * 
 	 * @param string $key
 	 * @return bool
 	 */
-	public function isDateAttribute(string $key): bool
+	public function hasAttributeType(string $key): bool
 	{
-		return in_array($key, $this->getDateAttributes(), true);
+		return array_key_exists($key, $this->getAttributeTypes());
 	}
 
 	/**
-	 * 设置 日期属性 存储格式
+	 * 获取 指定属性 数据类型
 	 * 
-	 * @param string $format
+	 * @param string $key
+	 * @return string
+	 */
+	public function getAttributeType(string $key): string
+	{
+		return $this->getAttributeTypes()[$key];
+	}
+
+// ---------------------- JSON类型 ----------------------
+	/**
+	 * 填充 JSON 属性
+	 * 
+	 * @param string $key
+	 * @param mixed $value
 	 * @return $this
 	 */
-	public function setDateFormat(string $format)
+	public function fillJsonAttribute(string $key, $value)
 	{
-		$this->dateFormat = $format;
+		[$key, $path] = explode('->', $key, 2);
+
+		$array = Transform::toArray($this->attributes[$key] ?? []);
+
+		$jsonKeys = explode('->', $path);
+		foreach ($jsonKeys as $i => $k) {
+			if (count($jsonKeys) === 1) {
+				break;
+			}
+			unset($jsonKeys[$i]);
+
+			if (! isset($array[$k]) || ! is_array($array[$k])) {
+				$array[$k] = [];
+			}
+
+			$array = &$array[$k];
+		}
+
+		$array[array_shift($jsonKeys)] = $value;
+
+		$this->attributes[$key] = Transform::toJson($array);
 
 		return $this;
 	}
 
+// ---------------------- 转换 ----------------------
 	/**
-	 * 获取 日期属性 存储格式
-	 * 
-	 * @return string
-	 */
-	public function getDateFormat(): string
-	{
-		return $this->dateFormat;
-	}
-
-// ---------------------- JSON属性 ----------------------
-	/**
-	 * 模型 JSON属性
-	 * 
-	 * @var array
-	 */
-	protected $jsons = [];
-
-	/**
-	 * 获取 JSON属性
+	 * 转换为 数组
 	 * 
 	 * @return array
 	 */
-	public function getJsonAttributes(): array
+	public function attributesToArray(): array
 	{
-		return $this->jsons;
-	}
-
-	/**
-	 * 是否为 JSON属性
-	 * 
-	 * @param string $key
-	 * @return bool
-	 */
-	public function isJsonAttribute(string $key): bool
-	{
-		return in_array($key, $this->getJsonAttributes(), true);
-	}
-
-// ---------------------- 强制转换属性 ----------------------
-	/**
-	 * 强制转换 属性
-	 * 
-	 * @var array
-	 */
-	protected $casts = [];
-
-	/**
-	 * 强制转换属性 数据类型 缓存
-	 * 
-	 * @var array
-	 */
-	protected static $castTypeCache = [];
-
-	/**
-	 * 获取 强制转换 属性
-	 * 
-	 * @return array
-	 */
-	public function getCastAttributes(): array
-	{
-		// 模型主键 自增
-		if ($this->getIncrementing()) {
-			return array_merge([$this->getPrimaryKeyName() => $this->getPrimaryKeyType()], $this->casts);
-		}
-
-		return $this->casts;
-	}
-
-	/**
-	 * 是否为 强制转换属性
-	 * 
-	 * @param string $key
-	 * @return bool
-	 */
-	public function isCastAttribute(string $key): bool
-	{
-		return array_key_exists($key, $this->getCastAttributes());
-	}
-
-	/**
-	 * 获取 强制转换属性 转换类型
-	 * 
-	 * @param string $key
-	 * @param string
-	 */
-	protected function getCastAttributeType(string $key): string
-	{
-		// 强制转换 类型
-		$castType = $this->getCastAttributes()[$key];
-
-		// 缓存中 存在
-		if (isset(static::$castTypeCache[$castType])) {
-			return static::$castTypeCache[$castType];
-		}
-
-		// 是否为 自定义日期时间 类型
-		if ($this->isCustomDateTimeCastType($castType)) {
-			$convertedCastType = 'custom_datetime';
-		}
-		// 是否为 小数 类型
-		elseif ($this->isDecimalCastType($castType)) {
-			$convertedCastType = 'decimal';
-		}
-		else {
-			$convertedCastType = trim(strtolower($castType));
-		}
-
-		return static::$castTypeCache[$castType] = $convertedCastType;
-	}
-
-	/**
-	 * 是否为 自定义日期时间 强制转换 类型
-	 * 
-	 * @param string $castType
-	 * @return bool
-	 */
-	protected function isCustomDateTimeCastType(string $castType): bool
-	{
-		return strncmp($castType, $str = 'datetime:', strlen($str)) === 0;
-	}
-
-	/**
-	 * 是否为 小数 强制转换 类型
-	 * 
-	 * @param string $castType
-	 * @return bool
-	 */
-	protected function isDecimalCastType(string $castType): bool
-	{
-		return strncmp($castType, $str = 'decimal:', strlen($str)) === 0;
-	}
-
-// ---------------------- 属性 修改器、访问器 ----------------------
-	/**
-	 * 访问器属性 缓存
-	 * 
-	 * @var array
-	 */
-	protected static $accessorAttributeCache = [];
-
-	/**
-	 * 是否存在 属性 修改器
-	 * 
-	 * @param string $key
-	 * @return bool
-	 */
-	public function hasSetMutator(string $key): bool
-	{
-		return method_exists($this, 'set' . Str::upperCamel($key) . 'Attribute');
-	}
-
-	/**
-	 * 使用 属性修改器 设置属性值
-	 * 
-	 * @param string $key
-	 * @param mixed $value
-	 * @return mixed
-	 */
-	protected function setMutatedAttributeValue(string $key, $value)
-	{
-		return $this->{'set' . Str::upperCamel($key) . 'Attribute'}($value);
-	}
-
-	/**
-	 * 是否存在 属性 访问器
-	 * 
-	 * @param string $Key
-	 * @return bool
-	 */
-	public function hasGetAccessor(string $key): bool
-	{
-		return method_exists($this, 'get' . Str::upperCamel($key) . 'Attribute');
-	}
-
-	/**
-	 * 获取 属性访问器 属性值
-	 * 
-	 * @param string $key
-	 * @param mixed $value
-	 * @return mixed
-	 */
-	protected function getAccessorAttributeValue(string $key, $value)
-	{
-		return $this->{'get' . Str::upperCamel($key) . 'Attribute'}($value);
-	}
-
-	/**
-	 * 获取 访问器 属性
-	 * 
-	 * @return array
-	 */
-	public function getAccessorAttributes(): array
-	{
-		if (! isset(static::$accessorAttributeCache[static::class])) {
-			static::cacheAccessorAttributes($this);
-		}
-
-		return static::$accessorAttributeCache[static::class];
-	}
-
-	/**
-	 * 缓存 访问器 属性
-	 * 
-	 * @param object|string $class
-	 * @return void
-	 */
-	public static function cacheAccessorAttributes($class)
-	{
-		// 获取类名
-		$className = (new \ReflectionClass($class))->getName();
-
-		// 获取 类 所有方法
-		$methods = implode(';', get_class_methods($className));
-
-		// 匹配 访问器 方法
-		preg_match_all('/(?<=^|;)get([^;]+?)Attribute(;|$)/', $methods, $matches);
-
-		// 缓存
-		static::$accessorAttributeCache[$className] = array_map(function ($value) {
-			return Str::snake($value);
-		}, $matches[1]);
-	}
-
-// ---------------------- 关系 属性 ----------------------
-	/**
-	 * 是否为 关系方法
-	 * 
-	 * @param string $key
-	 * @return bool
-	 */
-	public function isRelation(string $key): bool
-	{
-		return method_exists($this, $key);
-	}
-
-	/**
-	 * 获取 关系
-	 * 
-	 * @param string $key
-	 * @return mixed
-	 */
-	public function getRelationValue(string $key)
-	{
-		// 是否已加载
-		if ($this->isRelationLoaded($key)) {
-			return $this->relations[$key];
-		}
-
-		// 不是 关系方法
-		if (! $this->isRelation($key)) {
-			return ;
-		}
-
-		// 设置 关系
-		$this->setRelation(
-			$key,
-			// 获取 关系
-			$results = $this->getRelationshipInstance($key)->getResults()
+		// 添加 访问器 属性值
+		$attributes = $this->addAccessorAttributeValues(
+			$attributes = $this->getArrayableAttributes()
 		);
 
-		return $results;
+		// 添加 强制转换 属性值
+		$attributes = $this->addCastAttributeValues($attributes);
+
+		return $attributes;
+	}
+
+
+	/**
+	 * 添加 访问器属性值
+	 * 
+	 * @param array $attributes
+	 * @return array
+	 */
+	protected function addAccessorAttributeValues(array $attributes): array
+	{
+		foreach ($this->getAccessorAttributes() as $key) {
+			// 不存在
+			if (! array_key_exists($key, $attributes)) {
+				continue;
+			}
+
+			// 获取 属性访问器的 值
+			$attributes[$key] = $this->getAccessorAttributeValue($key, $value = $attributes[$key]);
+		}
+
+		return $attributes;
 	}
 
 	/**
-	 * 获取 关系 实例
+	 * 添加 强制转换 属性值
 	 * 
-	 * @param string $method
-	 * @return Xzb\Ci3\Database\Eloquent\Relations\Relation
-	 * 
-	 * @throws \Xzb\Ci3\Database\Exception\ModelMissingRelationException
+	 * @param array $attributes
+	 * @return array
 	 */
-	protected function getRelationshipInstance(string $method)
+	protected function addCastAttributeValues(array $attributes): array
 	{
-		$relation = $this->{$method}();
+		// 访问器 属性
+		$accessorAttributes = $this->getAccessorAttributes();
 
-		if (! $relation instanceof Relation) {
-			$message = static::class . '::' .  $method . ' must return a relationship instance';
-			if (is_null($relation)) {
-				$message = static::class . '::' .  $method . ' must return a relationship instance, but "null" was returned. Was the "return" keyword used?';
+		foreach ($this->getCastAttributes() as $key => $type) {
+			// 不存在 或者 有属性访问器
+			if ( ! array_key_exists($key, $attributes) || in_array($key, $accessorAttributes)) {
+				continue;
 			}
 
-			throw new ModelMissingRelationException($message);
+			// 转换 值类型
+			$attributes[$key] = Transform::valueType($type, $attributes[$key]);
+			
 		}
 
-		return $relation;
+		return $attributes;
 	}
 
 }

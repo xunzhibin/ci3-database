@@ -4,9 +4,9 @@
 namespace Xzb\Ci3\Database\Eloquent\Relations;
 
 /**
- * 远程 一对一
+ * 一对一 远程
  */
-class HasOneThrough extends HasManyThrough
+class HasOneThrough extends HasOneOrManyThrough
 {
 	/**
 	 * 获取 结果
@@ -15,21 +15,10 @@ class HasOneThrough extends HasManyThrough
 	 */
 	public function getResults()
 	{
-		if (! strlen($this->getParentModelPrimaryKeyValue())) {
-			return $this->getDefaultFor();
+		if (is_null($this->parent->{$this->parentPrimaryKey})) {
+			return $this->getDefault();
 		}
 
-		return $this->first() ?: $this->getDefaultFor();
+		return $this->first() ?: $this->getDefault();
 	}
-
-	/**
-	 * 获取 关系 默认值
-	 * 
-	 * @return mixed
-	 */
-	protected function getDefaultFor()
-	{
-		return ;
-	}
-
 }

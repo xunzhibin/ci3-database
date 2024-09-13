@@ -52,4 +52,20 @@ trait HasTables
 		return Str::snake(class_basename($this));
 	}
 
+// ---------------------- 限定列 ----------------------
+	/**
+	 * 限定列
+	 * 
+	 * @param string $column
+	 * @return string
+	 */
+	public function qualifyColumn(string $column): string
+	{
+		if (Str::contains($column, '.')) {
+			return $column;
+		}
+
+		return $this->getTable() . '.' . $column;
+	}
+
 }
