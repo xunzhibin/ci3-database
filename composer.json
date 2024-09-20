@@ -9,7 +9,7 @@
         }
     ],
     "require": {
-        "xzb/ci3-helpers": "dev-main"
+        "xzb/ci3-helpers": "v1.0.0"
     },
     "autoload": {
         "psr-4": {
